@@ -1,5 +1,6 @@
 import { log } from '../helpers/jUtils.js';
 import { ObjectId } from 'mongodb';
+import constants from '../constants.js';
 
 const initRouter = (express, db, photos) => {
   const castId = obj => obj._id = obj._id ? new ObjectId(obj._id) : null;
@@ -23,19 +24,16 @@ const initRouter = (express, db, photos) => {
     res.json({filesAdded});
   });
 
-  dbRouter.get('/random', async (rec, res) => {
+  dbRouter.get('/randomUrl', async (rec, res) => {
     // Return a URL to a random picture.
     try {
         const docs = await photos.getRandomPicture('default');
-        
-
-        //res.json(doc);
-        //console.log(`doc.fullname: ${doc.fullname}`, doc)
         if (docs.length) {
-            const doc = docs[0]
-            
-            console.log('redirecting', `../${doc.fullname}`);
-            res.redirect(`../../${doc.fullname}`)
+            const doc = docs[0];                    
+            res.json({
+                ...doc,
+                url: constants.baseUrl + '/' + doc.fullname
+            });
         }
 
     } catch (err) {
@@ -43,6 +41,19 @@ const initRouter = (express, db, photos) => {
     }
   });
 
+  dbRouter.get('/randomRedirect', async (rec, res) => {
+    // Redirect to a random picture.
+    try {
+        const docs = await photos.getRandomPicture('default');
+        if (docs.length) {
+            const doc = docs[0];                    
+            res.redirect(`../../${doc.fullname}`)
+        }
+
+    } catch (err) {
+        res.status(500).send();
+    }
+  });
   
 
   return dbRouter;
