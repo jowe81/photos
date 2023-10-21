@@ -30,6 +30,14 @@ const getFileNames = (targetPath, callingScriptPath) => {
   return fs.readdirSync(directoryPath);
 }
 
+const parsePath = (filename) => {
+    const parsed = {};
+    parsed.extension = path.extname(filename);
+    parsed.filename = path.basename(filename);
+    parsed.dirname = path.dirname(filename);
+    return parsed;
+}
+
 const getFormattedDate = (date, color = 'gray') => {
     if (!date) {
         date = new Date();
@@ -155,5 +163,6 @@ export {
     pad,
     log,
     scale,    
+    parsePath,
 }
 
