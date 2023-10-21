@@ -23,6 +23,26 @@ const initRouter = (express, db, photos) => {
     res.json({filesAdded});
   });
 
+  dbRouter.get('/random', async (rec, res) => {
+    // Return a URL to a random picture.
+    try {
+        const docs = await photos.getRandomPicture('default');
+        
+
+        //res.json(doc);
+        //console.log(`doc.fullname: ${doc.fullname}`, doc)
+        if (docs.length) {
+            const doc = docs[0]
+            
+            console.log('redirecting', `../${doc.fullname}`);
+            res.redirect(`../../${doc.fullname}`)
+        }
+
+    } catch (err) {
+        res.status(500).send();
+    }
+  });
+
   
 
   return dbRouter;

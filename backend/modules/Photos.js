@@ -11,6 +11,7 @@ import path from 'path';
 function Photos(dbObject) {
 
     const db = dbObject;
+    const collectionName = 'default';
 
     async function addDirectoryToDb(path, collectionName, extensions = []) {
         const files = scanDirectory(path, extensions);
@@ -49,12 +50,25 @@ function Photos(dbObject) {
         } catch (err) {
             console.log(err);
         }
-        console.log('result:', result)
+
+        return result;
+    }
+
+    async function getRandomPicture(collectionName) {
+        let result;
+        try {
+            const collection = getEnhancedCollection(db, collectionName);
+            result = await collection.aggregate([{ $sample: {size: 1} }]).toArray();  
+        } catch (err) {
+            console.log(err);
+        }        
+        console.log('result', result)
         return result;
     }
 
     return {
         addDirectoryToDb,
+        getRandomPicture,
     };    
 }
 
