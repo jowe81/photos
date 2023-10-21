@@ -1,9 +1,7 @@
 import { log } from '../helpers/jUtils.js';
 import { ObjectId } from 'mongodb';
-import { scanDirectory } from '../modules/scanner.js';
-import { addDirectoryToDb } from '../modules/Photos.js';
 
-const initRouter = (express, db) => {
+const initRouter = (express, db, photos) => {
   const castId = obj => obj._id = obj._id ? new ObjectId(obj._id) : null;
   const logError = err => log(`Error: ${err.message}`);
 
@@ -21,9 +19,8 @@ const initRouter = (express, db) => {
   })
   
   dbRouter.get('/', async (rec, res) => {
-    addDirectoryToDb('./', 'default', ['.jpg', '.jpeg', '.png', '.json']);
-    const files = scanDirectory('./');
-    res.json({'files': files});
+    const filesAdded = await photos.addDirectoryToDb('./', 'default', ['.jpg', '.jpeg']);
+    res.json({filesAdded});
   });
 
   

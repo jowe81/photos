@@ -15,15 +15,11 @@ function walkDir(dir, callback) {
 };
 
 
-function scanDirectory(path = './', extensions = ['json']) {
+function scanDirectory(path = './', extensions = []) {
     const files = [];
 
     walkDir(path, (file => {
-        const parts = file.split('.');
-        const ext = parts[parts.length - 1];
-        if (extensions.includes(ext)) {
-            files.push(file);
-        }        
+        files.push(file);
     }));
 
     return files;
