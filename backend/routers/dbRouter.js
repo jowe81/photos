@@ -20,14 +20,14 @@ const initRouter = (express, db, photos) => {
   })
   
   dbRouter.get('/', async (rec, res) => {
-    const filesAdded = await photos.addDirectoryToDb('./', 'default', ['.jpg', '.jpeg']);
+    const filesAdded = await photos.addDirectoryToDb('./', null, ['.jpg', '.jpeg']);
     res.json({filesAdded});
   });
 
   dbRouter.get('/randomUrl', async (rec, res) => {
     // Return a URL to a random picture.
     try {
-        const docs = await photos.getRandomPicture('default');
+        const docs = await photos.getRandomPicture();
         if (docs.length) {
             const doc = docs[0];                    
             res.json({
@@ -44,7 +44,7 @@ const initRouter = (express, db, photos) => {
   dbRouter.get('/randomRedirect', async (rec, res) => {
     // Redirect to a random picture.
     try {
-        const docs = await photos.getRandomPicture('default');
+        const docs = await photos.getRandomPicture();
         if (docs.length) {
             const doc = docs[0];                    
             res.redirect(`../../${doc.fullname}`)
