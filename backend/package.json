@@ -18,6 +18,7 @@
         "cors": "^2.8.5",
         "dotenv": "^16.0.3",
         "exif-parser": "^0.1.12",
+        "exifreader": "^4.15.0",
         "express": "^4.18.2",
         "lodash": "^4.17.21",
         "mongodb": "^5.5.0",

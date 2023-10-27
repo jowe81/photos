@@ -1,6 +1,7 @@
 import { log } from '../helpers/jUtils.js';
 import { ObjectId } from 'mongodb';
 import constants from '../constants.js';
+import ExifReader from 'exifreader';
 
 const initRouter = (express, db, photos) => {
   const castId = obj => obj._id = obj._id ? new ObjectId(obj._id) : null;
@@ -16,12 +17,17 @@ const initRouter = (express, db, photos) => {
 
   dbRouter.use((req, res, next) => {    
     log(`/post/dbRouter${req.url}`);
+    
     next();
   })
   
-  dbRouter.get('/', async (rec, res) => {
-    const filesAdded = await photos.addDirectoryToDb('./', null, ['.jpg', '.jpeg']);
-    res.json({filesAdded});
+  dbRouter.get('/addAssets/', async (req, res) => {
+    const { path } = req.query;
+
+    if (path) {
+        const filesAdded = await photos.addDirectoryToDb('./' + path, undefined, ['.jpg', '.jpeg']);
+        res.json({filesAdded});    
+    }
   });
 
   dbRouter.get('/randomUrl', async (rec, res) => {
@@ -37,6 +43,7 @@ const initRouter = (express, db, photos) => {
         }
 
     } catch (err) {
+        console.log(err)
         res.status(500).send();
     }
   });
