@@ -46,10 +46,19 @@ function Photos(dbObject) {
     
                     ExifReader.load(file).then(data => {
                         const tagsB = data;
+
+                        // Convert the date-time info to a JS parseable string.
+                        const convertDateTime = (dateTimeRaw) => {                            
+                            const parts = dateTimeRaw.split(' ');
+                            const date = parts[0].replaceAll(':', '-');
+                            const time = parts[1];
+                            return date + ' ' + time;                            
+                        }
+
                         const exifData = {
                             width: tagsA?.imageSize?.width ?? tagsB['Image Width']?.value,
                             height: tagsA?.imageSize?.height ?? tagsB['Image Height']?.value,
-                            dateTime: tagsB['DateTimeOriginal']?.value[0] ?? tagsB['DateTimeDigitized']?.value[0],
+                            dateTime: convertDateTime(tagsB['DateTimeOriginal']?.value[0] ?? tagsB['DateTimeDigitized']?.value[0]),
                         }
 
                         fileInfo = {
