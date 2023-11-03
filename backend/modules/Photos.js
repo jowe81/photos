@@ -48,7 +48,7 @@ function Photos(dbObject) {
                         const tagsB = data;
 
                         // Convert the date-time info to a JS parseable string.
-                        const convertDateTime = (dateTimeRaw) => {                            
+                        const convertDateTime = (dateTimeRaw) => {
                             const parts = dateTimeRaw.split(' ');
                             const date = parts[0].replaceAll(':', '-');
                             const time = parts[1];
@@ -58,7 +58,16 @@ function Photos(dbObject) {
                         const exifData = {
                             width: tagsA?.imageSize?.width ?? tagsB['Image Width']?.value,
                             height: tagsA?.imageSize?.height ?? tagsB['Image Height']?.value,
-                            dateTime: convertDateTime(tagsB['DateTimeOriginal']?.value[0] ?? tagsB['DateTimeDigitized']?.value[0]),
+                            dateTime: convertDateTime(tagsB['DateTimeOriginal']?.value[0] ?? tagsB['DateTimeDigitized']?.value[0] ?? ''),
+                            device: { 
+                                make: tagsB['Make']?.value,
+                                model: tagsB['Model']?.value,
+                            },
+                            orientation: tagsB['Orientation']?.value,
+                        }
+
+                        if (exifData.width && exifData.height) {
+                            fileInfo.aspect = exifData.width / exifData.height;
                         }
 
                         fileInfo = {

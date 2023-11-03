@@ -17,7 +17,7 @@ const initRouter = (express, db, photos) => {
 
   dbRouter.use((req, res, next) => {    
     log(`/post/dbRouter${req.url}`);
-    
+    console.log(req.body);
     next();
   })
   
@@ -30,7 +30,7 @@ const initRouter = (express, db, photos) => {
     }
   });
 
-  dbRouter.get('/randomUrl', async (rec, res) => {
+  dbRouter.get('/randomUrl', async (req, res) => {
     // Return a URL to a random picture.
     try {
         const docs = await photos.getRandomPicture();
@@ -48,7 +48,7 @@ const initRouter = (express, db, photos) => {
     }
   });
 
-  dbRouter.get('/randomRedirect', async (rec, res) => {
+  dbRouter.get('/randomRedirect', async (req, res) => {
     // Redirect to a random picture.
     try {
         const docs = await photos.getRandomPicture();
@@ -61,6 +61,13 @@ const initRouter = (express, db, photos) => {
         res.status(500).send();
     }
   });
+
+  dbRouter.post('/curl', async (req, res) => {
+    console.log(req.query, req.params, req.body);
+    console.log(Object.keys(req));
+    console.log(req.rawHeaders, req.baseUrl,req.method);
+    res.json({"error":0,"errortext":"","message":"","result":{"ind_first_name":"Nathan","ind_last_name":"Hartmann","ind_preferred_name":"Nate","member_number":"567150","email_address":"zzabsolutelyfakeemail@fakedomain.domzz"},"initiatetime":1697220833.504784,"responsetime":1697220833.840058,"requestid":21552})
+  })
   
 
   return dbRouter;
