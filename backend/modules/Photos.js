@@ -4,7 +4,7 @@ import fs from 'fs';
 import ExifParser from 'exif-parser';
 import ExifReader from 'exifreader';
 
-import { scanDirectory } from './scanner.js';
+import { scanDirectory } from './Scanner.js';
 import { parsePath } from '../helpers/jUtils.js';
 import { getEnhancedCollection } from '../db/dbutils.js';
 
