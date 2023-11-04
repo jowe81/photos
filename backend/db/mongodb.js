@@ -20,7 +20,7 @@ const connect = () => {
     client.connect()  
     .then((d) => {
       db = client.db(db_mongo_database);
-      resolve(db);
+      resolve({ db_mongo_database, db});
     }).catch(err => {
       log('Connection failed. ', null, err);
       reject(err);

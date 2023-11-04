@@ -5,7 +5,7 @@ dotenv.config();
 // Project files
 import mongoConnect from './db/mongodb.js';
 import dbRouter from './routers/dbRouter.js';
-import Photos from './modules/Photos.js';
+import Photos from './modules/photos/photos.js';
 import { log } from './helpers/jUtils.js';
 
 // Packages
@@ -25,8 +25,8 @@ const port = process.env.PORT ?? 3020;
 
 log(`Welcome to ${appName}. Backend is starting up...`);
 
-mongoConnect().then(db => {
-  log('Connected to database.');
+mongoConnect().then(({db_mongo_database, db}) => {
+  log(`Connected to database ${db_mongo_database}`);
 
   const promises = [];
 
