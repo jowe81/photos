@@ -8,30 +8,48 @@ const { Canvas, Image, ImageData } = canvas
 faceapi.env.monkeyPatch({ Canvas, Image, ImageData })
 
 
-async function recognizeFaces(imagePath) {
-    // Load faceapi models
-    const modelPath = './models'
-    await faceapi.nets.ssdMobilenetv1.loadFromDisk(modelPath)
-    await faceapi.nets.faceExpressionNet.loadFromDisk(modelPath)
-    await faceapi.nets.faceLandmark68Net.loadFromDisk(modelPath)
-    await faceapi.nets.faceLandmark68TinyNet.loadFromDisk(modelPath)
-    await faceapi.nets.faceRecognitionNet.loadFromDisk(modelPath)
-    await faceapi.nets.tinyFaceDetector.loadFromDisk(modelPath)
+async function getRecognizeFacesFunction() {
 
-    // Load the image
-    const img = await canvas.loadImage(imagePath);
+    async function recognizeFaces(imagePath) {
+        // Load the image
+        const img = await canvas.loadImage(imagePath);
+    
+        // Detect faces in the image
+        const detections = await faceapi.detectAllFaces(img).withFaceLandmarks().withFaceDescriptors();
+    
+        // Create an array of objects with face information
+        const faceInfo = detections.map((detection, i) => ({
+            faceNumber: i + 1,
+            faceDescriptor: detection.descriptor,
+        }));
+    
+        return faceInfo;
+    }
+    
+    async function initialize() {
+        // Load faceapi models
+        const modelPath = './models'
+        await faceapi.nets.ssdMobilenetv1.loadFromDisk(modelPath)
+        await faceapi.nets.faceExpressionNet.loadFromDisk(modelPath)
+        await faceapi.nets.faceLandmark68Net.loadFromDisk(modelPath)
+        await faceapi.nets.faceLandmark68TinyNet.loadFromDisk(modelPath)
+        await faceapi.nets.faceRecognitionNet.loadFromDisk(modelPath)
+        await faceapi.nets.tinyFaceDetector.loadFromDisk(modelPath)
+    }
 
-    // Detect faces in the image
-    const detections = await faceapi.detectAllFaces(img).withFaceLandmarks().withFaceDescriptors();
+    console.log('Initializing FaceApi...');
+    try {
+        await initialize();
+        console.log('...ready.');    
 
-    // Create an array of objects with face information
-    const faceInfo = detections.map((detection, i) => ({
-        faceNumber: i + 1,
-        faceDescriptor: detection.descriptor,
-    }));
+        return recognizeFaces;
+    } catch(err) {
+        console.log(`Failed to initialize.`);        
+    }    
 
-    return faceInfo;
+    return null;
 }
+
 
 // Usage example
 const imagePath = './test.jpg';
@@ -45,4 +63,4 @@ recognizeFaces(imagePath)
     });
 
 // Export the function if needed
-export { recognizeFaces };
+export { getRecognizeFacesFunction };

@@ -14,7 +14,6 @@ import { log } from './../Log.js';
 function Photos(dbObject) {
 
     const db = dbObject;
-    const collectionName = 'photos';
 
     async function addDirectoryToDb(path, collectionName = constants.defaultCollectionName, extensions = []) {
         const files = scanDirectory(path, extensions);    
@@ -38,11 +37,11 @@ function Photos(dbObject) {
                         gid,
                     }         
                     
-                    const buffer = fs.readFileSync(file);
-                    const parser = ExifParser.create(buffer);            
                     let tagsA = {};
 
                     try {
+                        const buffer = fs.readFileSync(file);
+                        const parser = ExifParser.create(buffer);                
                         tagsA = parser.parse();
                     } catch (err) {
                         console.log(err.message);
@@ -95,7 +94,7 @@ function Photos(dbObject) {
         return Promise
             .all(promises)
             .then(filesInfo => {
-                console.log(`Have info about ${filesInfo} files`);
+                console.log(`Have info about ${filesInfo.length} files; goes to collection ${collectionName}`);
                 addFilesToDb(filesInfo, collectionName)
             })
             .catch(err => {
@@ -110,7 +109,8 @@ function Photos(dbObject) {
         console.log(`Filtered out ${filesInfo.length - filesInfoFiltered.length} invalid items`);
         try {
             const collection = getEnhancedCollection(db, collectionName);
-            result = await collection.insertMany(filesInfoFiltered, null, ['fullname']);    
+            result = await collection.insertMany(filesInfoFiltered, null, ['fullname']); 
+            console.log(result);
         } catch (err) {
             console.log(err);
         }
