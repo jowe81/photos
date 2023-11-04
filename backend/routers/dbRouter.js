@@ -25,7 +25,7 @@ const initRouter = (express, db, photos) => {
     const { path } = req.query;
 
     if (path) {
-        const data = await photos.addDirectoryToDb('./' + path, undefined, ['.jpg', '.jpeg']);
+        const data = await photos.addDirectoryToDb('./' + path);
         res.json({data});    
     }
   });

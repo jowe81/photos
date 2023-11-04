@@ -28,7 +28,7 @@ async function getRecognizeFacesFunction() {
     
     async function initialize() {
         // Load faceapi models
-        const modelPath = './models'
+        const modelPath = './modules/photos/models'
         await faceapi.nets.ssdMobilenetv1.loadFromDisk(modelPath)
         await faceapi.nets.faceExpressionNet.loadFromDisk(modelPath)
         await faceapi.nets.faceLandmark68Net.loadFromDisk(modelPath)
@@ -37,30 +37,14 @@ async function getRecognizeFacesFunction() {
         await faceapi.nets.tinyFaceDetector.loadFromDisk(modelPath)
     }
 
-    console.log('Initializing FaceApi...');
+    // Init and return function on success.
     try {
         await initialize();
-        console.log('...ready.');    
 
         return recognizeFaces;
     } catch(err) {
-        console.log(`Failed to initialize.`);        
+        return null;
     }    
-
-    return null;
 }
 
-
-// // Usage example
-// const imagePath = './test.jpg';
-
-// recognizeFaces(imagePath)
-//     .then((faces) => {
-//         console.log(`Discovered ${faces.length} face(s)`);
-//     })
-//     .catch((error) => {
-//         console.error(error);
-//     });
-
-// Export the function if needed
 export { getRecognizeFacesFunction };

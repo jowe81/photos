@@ -9,33 +9,60 @@ import { parsePath } from '../../helpers/jUtils.js';
 import { getEnhancedCollection } from '../../db/dbutils.js';
 import { getRecognizeFacesFunction } from './faceRecognition.mjs';
 
-import path, { resolve } from 'path';
 import { log } from './../Log.js';
-import { rejects } from 'assert';
+import { resolve } from 'path';
+import { Console } from 'console';
 
 
 
-function Photos(dbObject) {
+function Photos(dbObject, collectionName) {
 
     const db = dbObject;
+    
+    if (!collectionName) {
+        collectionName = constants.defaultCollectionName;
+    }
 
-    async function addDirectoryToDb(path, collectionName = constants.defaultCollectionName, extensions = []) {
+    const collectionNameFaceData = `${collectionName}FaceData`;
+
+    const fileInfoCollection = getEnhancedCollection(db, collectionName);
+    const faceDataCollection = getEnhancedCollection(db, collectionNameFaceData);
+
+    const extensions = ['.jpg', '.jpeg'];
+    
+    log(`Initializing Photos module with fileInfoCollection names ${collectionName}, ${collectionNameFaceData}.`);
+    log(`Extensions for processing: ${extensions.join(', ')}`);
+
+    // Initialize facepi
+    let recognizeFaces;
+    getRecognizeFacesFunction().then(recognizeFacesFunction => {
+        if (!recognizeFacesFunction) {
+            log(`Unable to load FaceApi. Face detection/recognition will not be available.`);
+        }
+        recognizeFaces = recognizeFacesFunction;
+        log(`FaceApi loaded successfully.`);    
+    });
+
+    async function addDirectoryToDb(path) {
         const files = scanDirectory(path, extensions);    
         const promises = [];
         
         log(`addDirectoryToDb: Start processing ${files.length} files.`);
 
         const filesToProcess = files.filter((file) => shouldProcess(file, extensions));
+        log(`addDirectoryToDb: Filtered out ${files.length - filesToProcess.length} invalid files.`);
 
         const filesInfo = await processFilesSequentially(filesToProcess, collectionName);
 
-        const recordsInserted = filesInfo.filter(fileInfo => fileInfo.inserted).length;
+        const fileInfoRecordsInserted = filesInfo.filter(fileInfo => fileInfo.ops.fileInfo === 'insert').length;
+        const faceDataRecordsInserted = filesInfo.filter(fileInfo => fileInfo.ops.faceData === 'insert').length;
 
-        log(`addDirectoryToDb: Added ${recordsInserted} items. Finished.`);
+        log(`addDirectoryToDb: Added ${fileInfoRecordsInserted} fileInfo records, ${faceDataRecordsInserted} faceData records. Finished.`);
 
         const result = {
             result: {
-                recordsInserted: recordsInserted,
+                fileInfoRecordsInserted,
+                faceDataRecordsInserted
             },
             filesInfo,
         }
@@ -44,22 +71,66 @@ function Photos(dbObject) {
     }
 
     async function processFile(file, collectionName) {
-        // Perform your asynchronous operations on the file here
         log(`-- Processing file: ${file}`);
-        // Simulate an asynchronous operation (e.g., reading a file)
-        const fileInfo = await new Promise(async (resolve) => {
-            let fileInfo = {};
+
+        const existingData = await getDataForFile(file);
+        
+        let fileInfo;
+        let faceData;
+        let ops = {
+            fileInfo: null,
+            faceData: null,
+        };
+
+        if (Object.keys(existingData).length) {
+            const presentRecords = [];
+            if (existingData.fileInfo) { 
+                fileInfo = existingData.fileInfo;
+                presentRecords.push('fileInfo');
+            }
+            if (existingData.faceData) {
+                faceData = existingData.faceData;
+                presentRecords.push('faceData');
+            }
             
-            fileInfo = getBasicMeta(file, fileInfo);        
-            fileInfo = await getExifData(file, fileInfo);
-            fileInfo = await getFaceData(file, fileInfo);
-            const insertResult = await addFileToDb(fileInfo, collectionName);
-    
-            resolve({fileInfo, inserted: !!insertResult});
-    
-        });
+            log(`Already have the following: ${presentRecords.join(', ')}`);
+        }
+
+        let faceDataId = faceData?._id;
+
+        if (!faceDataId) {
+            // Add a faceData record.
+            const faceDataRecord = await processFaces(file);
+            if (faceDataRecord) {
+                ops.faceData = 'insert';
+                faceData = faceDataRecord;
+                faceDataId = faceDataRecord._id;
+            }
+        }
+
+        if (!fileInfo) {
+            fileInfo = await new Promise(async (resolve) => {
+                let fileInfo = {};
+                
+                fileInfo = getBasicMeta(file, fileInfo);        
+                fileInfo = await getExifData(file, fileInfo);
+                
+                // Add the link to face data if we have it.
+                if (faceDataId) {
+                    fileInfo._faceDataId = faceDataId;
+                }
+
+                // Add the main fileInfo record.
+                const insertResult = await addFileToDb(fileInfo, collectionName);
+                if (insertResult) {
+                    ops.fileInfo = 'insert';
+                }
+                resolve(fileInfo);        
+            });
+        }
+
         log(`Done with: ${file}`);
-        return fileInfo;
+        return { ops, fileInfo, faceData };
     }
       
     // Asynchronous function to process all files sequentially
@@ -74,11 +145,11 @@ function Photos(dbObject) {
     
     function shouldProcess(file = '', extensions = ['.jpg', '.jpeg']) {
         const { extension, filename, dirname } = parsePath(file);
-    
+
         if (!(filename.substr(0,1) !== '.' && extensions.includes(extension))) {
             return false;
         }
-    
+
         return true;
     }
     
@@ -167,41 +238,87 @@ function Photos(dbObject) {
                 });     
         });
     }
-    
-    async function getFaceData(file = '', fileInfo = {}) {        
-        const recognizeFaces = await getRecognizeFacesFunction();
 
-        if (!recognizeFaces) {
-            log(`Unable to run face recognition, skipping.`);
-            return fileInfo;
+    async function processFaces(file) {
+        const faceData = await getFaceData(file);
+
+        // If we have face data, add a faceData record and return it.
+        if (faceData) {
+            const faceDataRecord = {
+                file,
+                faceData
+            }
+
+            const faceDataCollection = getEnhancedCollection(db, collectionNameFaceData);
+            let result;
+
+            try {
+                await faceDataCollection.insertOne(faceDataRecord, null);
+                log(`Added facedata record with id ${faceDataRecord._id}`);
+            } catch(err) {
+                // Couldn't insert.
+            }
+
+            // If the insert was successful, faceDataRecord now has an _id field.
+            if (faceDataRecord._id) {
+                return faceDataRecord;
+            }                
         }
 
-        fileInfo._faceData = await recognizeFaces(file);
-
-        log(`Got data for ${fileInfo._faceData} detected faces.`);
+        return null;
     }
     
-    async function addFileToDb(fileInfo, collectionName = constants.defaultCollectionName) {
-        let result;
+    async function getFaceData(file = '') {        
+        if (!recognizeFaces) {
+            log(`Unable to run face recognition, skipping.`);
+            return null;
+        }
+            
+        let faceData;
+
         try {
-            const collection = getEnhancedCollection(db, collectionName);
-            result = await collection.insertOne(fileInfo, null, ['fullname']); 
+            faceData = await recognizeFaces(file);
+        } catch(err) {
+            console.log(err)
+        }
+        
+        log(`Got data for ${faceData.length} detected faces.`);
+        return faceData;
+    }
+    
+    /**
+     * Get an object with fileInfo and faceData record, if present.
+     */
+    async function getDataForFile(file) {
+        let data = {};
+
+        try {            
+            // See if we have a fileInfo record.
+            const records = await fileInfoCollection.find({'fullname': file}).toArray();
+            if (records.length) {
+                data.fileInfo = records[0];
+            }
+
+            // See if we have face data.
+            const faceDataRecords = await faceDataCollection.find({file}).toArray();            
+            if (faceDataRecords.length) {
+                // Found face data.
+                data.faceData = faceDataRecords[0];
+            }
+
+            return data;
         } catch (err) {
             console.log(err);
         }
 
-        return result;
+        return data;
     }
 
-    async function addFilesToDb(filesInfo, collectionName = constants.defaultCollectionName) {
+    async function addFileToDb(fileInfo, collectionName = constants.defaultCollectionName) {
         let result;
-
-        const filesInfoFiltered = filesInfo.filter(fileInfo => fileInfo);
-        console.log(`Filtered out ${filesInfo.length - filesInfoFiltered.length} invalid items`);
         try {
-            const collection = getEnhancedCollection(db, collectionName);
-            result = await collection.insertMany(filesInfoFiltered, null, ['fullname']); 
-            console.log(result);
+            result = await fileInfoCollection.insertOne(fileInfo, null, ['fullname']);
+            log(`Added fileInfo record with id ${fileInfo._id}`);
         } catch (err) {
             console.log(err);
         }
@@ -212,8 +329,7 @@ function Photos(dbObject) {
     async function getRandomPicture(collectionName = constants.defaultCollectionName) {
         let result;
         try {
-            const collection = getEnhancedCollection(db, collectionName);
-            result = await collection.aggregate([{ $sample: {size: 1} }]).toArray();  
+            result = await fileInfoCollection.aggregate([{ $sample: {size: 1} }]).toArray();  
         } catch (err) {
             console.log(err);
         }        

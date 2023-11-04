@@ -22,6 +22,7 @@ function constructSearchFilter(search, fields) {
  * Returns a collection with enhanced functionality.
  */
 function getEnhancedCollection(db, collectionName) {
+    const name = collectionName;
     const collection = db.collection(collectionName);
     
     collection._insertMany = collection.insertMany;
@@ -63,19 +64,15 @@ function getEnhancedCollection(db, collectionName) {
         doc.created_at = now;
         doc.updated_at = now;
 
-        if (Array.isArray(uniqueKeys, doc)) {
-            const records = await collection.find(constructUniqueTestFilter(uniqueKeys, doc)).toArray();
-            if (!records.length) {
-                try {
-                    return await collection._insertOne(doc);
-                } catch {
-                    return false;
-                }
-                
-            } else {
+        const records = await collection.find(constructUniqueTestFilter(uniqueKeys, doc)).toArray();
+
+        if (!records.length || !uniqueKeys || (uniqueKeys && !uniqueKeys.length)) {
+            try {
+                return await collection._insertOne(doc);
+            } catch {
                 return false;
             }            
-        }
+        }            
 
         return false;
     }
