@@ -7,6 +7,7 @@ import ExifReader from 'exifreader';
 import { scanDirectory } from '../scanner.js';
 import { parsePath } from '../../helpers/jUtils.js';
 import { getEnhancedCollection } from '../../db/dbutils.js';
+import { getRecognizeFacesFunction } from './faceRecognition.mjs';
 
 import path, { resolve } from 'path';
 import { log } from './../Log.js';
@@ -51,6 +52,7 @@ function Photos(dbObject) {
             
             fileInfo = getBasicMeta(file, fileInfo);        
             fileInfo = await getExifData(file, fileInfo);
+            fileInfo = await getFaceData(file, fileInfo);
             const insertResult = await addFileToDb(fileInfo, collectionName);
     
             resolve({fileInfo, inserted: !!insertResult});
@@ -166,6 +168,18 @@ function Photos(dbObject) {
         });
     }
     
+    async function getFaceData(file = '', fileInfo = {}) {        
+        const recognizeFaces = await getRecognizeFacesFunction();
+
+        if (!recognizeFaces) {
+            log(`Unable to run face recognition, skipping.`);
+            return fileInfo;
+        }
+
+        fileInfo._faceData = await recognizeFaces(file);
+
+        log(`Got data for ${fileInfo._faceData} detected faces.`);
+    }
     
     async function addFileToDb(fileInfo, collectionName = constants.defaultCollectionName) {
         let result;

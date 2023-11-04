@@ -51,16 +51,16 @@ async function getRecognizeFacesFunction() {
 }
 
 
-// Usage example
-const imagePath = './test.jpg';
+// // Usage example
+// const imagePath = './test.jpg';
 
-recognizeFaces(imagePath)
-    .then((faces) => {
-        console.log(`Discovered ${faces.length} face(s)`);
-    })
-    .catch((error) => {
-        console.error(error);
-    });
+// recognizeFaces(imagePath)
+//     .then((faces) => {
+//         console.log(`Discovered ${faces.length} face(s)`);
+//     })
+//     .catch((error) => {
+//         console.error(error);
+//     });
 
 // Export the function if needed
 export { getRecognizeFacesFunction };
