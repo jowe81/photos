@@ -1,0 +1,9 @@
+.info-container {
+    width: 300px;
+}
+
+.info-container label {
+    font-weight: bold;
+    margin-top: 7px;
+    display: block;
+}

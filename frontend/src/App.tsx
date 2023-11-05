@@ -8,10 +8,15 @@ import axios from 'axios';
 function App() {  
   const [count, setCount] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [record, setRecord] = useState<{}>();
+  const [payload, setPayload] = useState<any>();
   
+  const fileInfo = payload?.fileInfo;
+  const faceData = payload?.faceData;
 
   const baseUrl = 'http://192.168.1.199:3020/';
+  if (fileInfo) {
+    fileInfo.fullUrl = baseUrl + fileInfo.fullname;
+  }
 
   const next = () => {
     let newIndex;
@@ -41,26 +46,26 @@ function App() {
       .then((data: any) => {
         if (data.data.success) {
           const payload = data.data.data;
+          setPayload({...payload});
           console.log('Payload',payload)
-          setRecord({...payload.fileInfo});
           setCount(payload.count);
-          console.log(`Got record:`, payload.record);  
         }
       })
-      .catch(err => console.warn(`Unable to retrieve record with index ${currentIndex}`));
+      .catch(err => console.warn(`Unable to retrieve fileInfo with index ${currentIndex}`));
   }, [currentIndex]);
 
   const props = { 
     baseUrl,
-    record: { ...record },
+    fileInfo: { ...fileInfo },
+    faceData: faceData?.faceData,
     onNextClick: next,
     onPrevClick: prev,
-
   }
+
   return (
     <>
       <Editor {...props}/>
-      <div>{!record && record && JSON.stringify(record)}</div>
+      <div>{!fileInfo && fileInfo && JSON.stringify(fileInfo)}</div>
     </>
   )
 }

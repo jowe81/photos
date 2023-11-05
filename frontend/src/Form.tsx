@@ -1,5 +1,5 @@
 function Form(props: any) {
-    const { record, onNextClick, onPrevClick } = props;
+    const { fileInfo, onNextClick, onPrevClick } = props;
 
     return <div>
         <div>

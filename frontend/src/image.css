@@ -1,15 +1,13 @@
-.image-container {
-    width: 800px;
-    height: 600px;
-    background-color: rgb(63, 63, 63);
+.image-and-canvas-container {
+    width: 670px;
+    height: 500px;
     display: flex;
     justify-content: center;
-    align-items:center;
+    align-items: center;
+    background-color: rgb(52, 52, 52);
 }
-
-.image-container img {
-    max-width: 100%;
-    max-height: 100%;
+.image-and-canvas {
     display: block;
-    margin: auto 0px;
+    padding-top: 6px;
+    margin-bottom: 10px !important;
 }

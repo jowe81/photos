@@ -1,21 +1,26 @@
 import Form from "./Form";
-import Image from "./Image";
 import Info from "./Info";
+import Image from "./Image";
 
-import './editor.css';
+import "./editor.css";
 
 function Editor(props: any) {
-    const { record } = props;
-    console.log(props);
-    return(
+    const { fileInfo } = props;
+
+    if (!fileInfo.fullUrl) {
+        return;
+    }
+
+    return (
         <div className="editor-container">
             <div className="editor-upper-section">
-                <Image {...props}/>
+                {/* <Image {...props}/> */}
+                <Image {...props} />
                 <Info {...props} />
             </div>
-            <Form {...props}/>
+            <Form {...props} />
         </div>
-    )    
+    );
 }
 
 export default Editor;
