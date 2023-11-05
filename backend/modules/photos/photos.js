@@ -346,9 +346,44 @@ function Photos(dbObject, collectionName) {
         return result;
     }
 
+    async function getCount() {
+        try {
+            const count = await fileInfoCollection.countDocuments();
+            return count;
+        } catch (err) {
+            console.log(err);
+            return -1;
+        }        
+    }
+
+    async function getRecords() {
+        try {
+            const records = await fileInfoCollection.find({}).toArray();
+            return records;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }        
+    }
+
+    async function getRecordWithIndex(index = 0) {
+        try {
+            index = parseInt(index);
+            const records = await fileInfoCollection.find({}).skip(index).limit(1).toArray();
+            return records;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }        
+    }
+
+
     return {
         addDirectoryToDb,
         getRandomPicture,
+        getCount,
+        getRecords,
+        getRecordWithIndex,
     };    
 }
 

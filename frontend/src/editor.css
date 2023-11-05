@@ -1,0 +1,10 @@
+.editor-upper-section {
+    background-color: black;
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+}
+
+.editor-upper-section > div {
+    margin: 10px
+}

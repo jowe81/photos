@@ -60,15 +60,37 @@ const initRouter = (express, db, photos) => {
     } catch (err) {
         res.status(500).send();
     }
-  });
+  });  
 
-  dbRouter.post('/curl', async (req, res) => {
-    console.log(req.query, req.params, req.body);
-    console.log(Object.keys(req));
-    console.log(req.rawHeaders, req.baseUrl,req.method);
-    res.json({"error":0,"errortext":"","message":"","result":{"ind_first_name":"Nathan","ind_last_name":"Hartmann","ind_preferred_name":"Nate","member_number":"567150","email_address":"zzabsolutelyfakeemail@fakedomain.domzz"},"initiatetime":1697220833.504784,"responsetime":1697220833.840058,"requestid":21552})
-  })
-  
+  dbRouter.get('/photo', async (req, res) => {
+    let index = req.query.index ?? 0;
+
+    try {
+      const count = await photos.getCount();
+
+      if (index < 0) {
+        index = 0;
+      } else if (index >= count) {
+        index = count - 1;
+      }
+
+      if (index > -1) {
+        const records = await photos.getRecordWithIndex(index);
+        const record = records.length ? records[0] : null;
+
+        const data = {
+          record,
+          count,
+          index,
+        }  
+
+        res.json({success: true, data});
+      }
+
+    } catch(err) {
+      res.status(500).json({success: false, error: error.message});
+    }        
+  });
 
   return dbRouter;
 }
