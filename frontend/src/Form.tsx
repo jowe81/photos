@@ -3,8 +3,8 @@ function Form(props: any) {
 
     return <div>
         <div>
-            <button onClick={onNextClick}>Next</button>
             <button onClick={onPrevClick}>Previous</button>
+            <button onClick={onNextClick}>Next</button>
         </div>
 
     </div>

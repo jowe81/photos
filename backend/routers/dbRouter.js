@@ -17,7 +17,6 @@ const initRouter = (express, db, photos) => {
 
   dbRouter.use((req, res, next) => {    
     log(`/post/dbRouter${req.url}`);
-    console.log(req.body);
     next();
   })
   
@@ -75,11 +74,11 @@ const initRouter = (express, db, photos) => {
       }
 
       if (index > -1) {
-        const records = await photos.getRecordWithIndex(index);
-        const record = records.length ? records[0] : null;
+        const fileData = await photos.getDataForFileWithIndex(index);                        
 
         const data = {
-          record,
+          faceData: fileData.faceData,
+          fileInfo: fileData.fileInfo,
           count,
           index,
         }  
@@ -88,7 +87,7 @@ const initRouter = (express, db, photos) => {
       }
 
     } catch(err) {
-      res.status(500).json({success: false, error: error.message});
+      res.status(500).json({success: false, error: err.message});
     }        
   });
 

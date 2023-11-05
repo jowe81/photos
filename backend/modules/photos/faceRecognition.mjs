@@ -23,6 +23,7 @@ async function getFaceFunctions() {
         const faceInfo = detections.map((detection, i) => ({
             faceNumber: i + 1,
             faceDescriptor: detection.descriptor,
+            detection,
         }));
     
         return faceInfo;

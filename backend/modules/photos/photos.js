@@ -369,8 +369,9 @@ function Photos(dbObject, collectionName) {
     async function getRecordWithIndex(index = 0) {
         try {
             index = parseInt(index);
-            const records = await fileInfoCollection.find({}).skip(index).limit(1).toArray();
-            return records;
+            const records = await fileInfoCollection.find({}).skip(index).limit(1).toArray();            
+            const record = records.length ? records[0] : null;            
+            return record;
         } catch (err) {
             console.log(err);
             return [];
@@ -378,10 +379,28 @@ function Photos(dbObject, collectionName) {
     }
 
 
+    async function getDataForFileWithIndex(index = 0) {
+        try {
+            index = parseInt(index);
+            const record = await getRecordWithIndex(index);
+            let data = record;
+            if (record) {
+                data = await getDataForFile(record.fullname);
+            }
+            
+            
+            return data;                        
+        } catch (err) {
+            console.log(err);
+            return [];
+        }        
+    }
+
     return {
         addDirectoryToDb,
         getRandomPicture,
         getCount,
+        getDataForFileWithIndex,
         getRecords,
         getRecordWithIndex,
     };    

@@ -41,7 +41,8 @@ function App() {
       .then((data: any) => {
         if (data.data.success) {
           const payload = data.data.data;
-          setRecord(payload.record);
+          console.log('Payload',payload)
+          setRecord({...payload.fileInfo});
           setCount(payload.count);
           console.log(`Got record:`, payload.record);  
         }
@@ -59,7 +60,7 @@ function App() {
   return (
     <>
       <Editor {...props}/>
-      <div>{record && JSON.stringify(record)}</div>
+      <div>{!record && record && JSON.stringify(record)}</div>
     </>
   )
 }
