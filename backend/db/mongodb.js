@@ -3,10 +3,10 @@ import { log } from '../helpers/jUtils.js';
 
 let db;
 
-const connect = () => {
+const connect = (dbName) => {
   const db_mongo_host = process.env.DB_MONGO_HOST;
   const db_mongo_port = process.env.DB_MONGO_PORT;
-  const db_mongo_database = process.env.DB_MONGO_DATABASE;
+  const db_mongo_database = process.env.DB_MONGO_DATABASE ?? dbName;
 
   const db_url = (db_mongo_host && db_mongo_port) ? 
     `mongodb://${db_mongo_host}:${db_mongo_port}` :

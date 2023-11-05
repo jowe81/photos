@@ -7,7 +7,7 @@ import ExifReader from 'exifreader';
 import { scanDirectory } from '../scanner.js';
 import { parsePath } from '../../helpers/jUtils.js';
 import { getEnhancedCollection } from '../../db/dbutils.js';
-import { getRecognizeFacesFunction } from './faceRecognition.mjs';
+import { getFaceFunctions } from './faceRecognition.mjs';
 
 import { log } from './../Log.js';
 import { resolve } from 'path';
@@ -34,12 +34,16 @@ function Photos(dbObject, collectionName) {
     log(`Extensions for processing: ${extensions.join(', ')}`);
 
     // Initialize facepi
-    let recognizeFaces;
-    getRecognizeFacesFunction().then(recognizeFacesFunction => {
-        if (!recognizeFacesFunction) {
+    let detectFaces, recognizeFaces;
+
+    getFaceFunctions().then(faceFunctions => {
+        if (!faceFunctions) {
             log(`Unable to load FaceApi. Face detection/recognition will not be available.`);
         }
-        recognizeFaces = recognizeFacesFunction;
+        
+        detectFaces = faceFunctions.detectFaces;
+        recognizeFaces = faceFunctions.recognizeFaces;
+
         log(`FaceApi loaded successfully.`);    
     });
 
@@ -105,6 +109,11 @@ function Photos(dbObject, collectionName) {
                 ops.faceData = 'insert';
                 faceData = faceDataRecord;
                 faceDataId = faceDataRecord._id;
+
+                const refRecords = await faceDataCollection.find({file:'assets/ref/jk_jess-johannes_02.jpg'}).toArray();
+                console.log('Ref Records:', refRecords.length)
+                const names = await recognizeFaces(faceData.faceData, refRecords.length ? refRecords[0].faceData : null);
+                console.log('Recognized:', names);    
             }
         }
 
@@ -269,7 +278,7 @@ function Photos(dbObject, collectionName) {
     }
     
     async function getFaceData(file = '') {        
-        if (!recognizeFaces) {
+        if (!detectFaces) {
             log(`Unable to run face recognition, skipping.`);
             return null;
         }
@@ -277,7 +286,7 @@ function Photos(dbObject, collectionName) {
         let faceData;
 
         try {
-            faceData = await recognizeFaces(file);
+            faceData = await detectFaces(file);
         } catch(err) {
             console.log(err)
         }
