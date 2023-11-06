@@ -1,0 +1,22 @@
+.input-box {
+    display: flex;
+    width: 100%;
+}
+
+.input-box div {
+    margin: 5px;
+}
+
+.facetag-input-outer-container {
+    margin: 10px;
+}
+
+.facetag-input-container {
+    width: 400px;
+    display: flex;
+    flex-direction: row;
+}
+
+.facetag-input-container div {
+    margin: 5px;
+}

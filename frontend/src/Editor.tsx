@@ -14,7 +14,6 @@ function Editor(props: any) {
     return (
         <div className="editor-container">
             <div className="editor-upper-section">
-                {/* <Image {...props}/> */}
                 <Image {...props} />
                 <Info {...props} />
             </div>
