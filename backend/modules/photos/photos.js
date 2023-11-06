@@ -1,75 +1,100 @@
-import constants from '../../constants.js';
-import chalk from 'chalk';
-import fs from 'fs';
-import ExifParser from 'exif-parser';
-import ExifReader from 'exifreader';
+import constants from "../../constants.js";
+import chalk from "chalk";
+import fs from "fs";
+import ExifParser from "exif-parser";
+import ExifReader from "exifreader";
 
-import { scanDirectory } from '../scanner.js';
-import { parsePath } from '../../helpers/jUtils.js';
-import { getEnhancedCollection } from '../../db/dbutils.js';
-import { getFaceFunctions } from './faceRecognition.mjs';
+import { ObjectId } from "mongodb";
 
-import { log } from './../Log.js';
-import { resolve } from 'path';
-import { Console } from 'console';
+import { scanDirectory } from "../scanner.js";
+import { parsePath } from "../../helpers/jUtils.js";
+import { getEnhancedCollection } from "../../db/dbutils.js";
+import { getFaceFunctions } from "./faceRecognition.mjs";
 
-
+import { log } from "./../Log.js";
+import { resolve } from "path";
+import { Console } from "console";
 
 function Photos(dbObject, collectionName) {
-
     const db = dbObject;
-    
+
     if (!collectionName) {
         collectionName = constants.defaultCollectionName;
     }
 
+    const collectionNameFileInfo = `${collectionName}FileInfo`;
     const collectionNameFaceData = `${collectionName}FaceData`;
+    const collectionNameReference = `${collectionName}Reference`;
+    const collectionNamePeople = `${collectionName}People`;
 
-    const fileInfoCollection = getEnhancedCollection(db, collectionName);
+    const fileInfoCollection = getEnhancedCollection(db, collectionNameFileInfo);
     const faceDataCollection = getEnhancedCollection(db, collectionNameFaceData);
+    const referenceCollection = getEnhancedCollection(db, collectionNameReference);
+    const peopleCollection = getEnhancedCollection(db, collectionNamePeople);
 
-    const extensions = ['.jpg', '.jpeg'];
-    
-    log(`Initializing Photos module with fileInfoCollection names ${collectionName}, ${collectionNameFaceData}.`);
-    log(`Extensions for processing: ${extensions.join(', ')}`);
+
+
+    const extensions = [".jpg", ".jpeg"];
+
+    log(
+        `Initializing Photos module with fileInfoCollection names ${collectionName}, ${collectionNameFaceData}.`
+    );
+    log(`Extensions for processing: ${extensions.join(", ")}`);
 
     // Initialize facepi
     let detectFaces, recognizeFaces;
 
-    getFaceFunctions().then(faceFunctions => {
+    getFaceFunctions().then((faceFunctions) => {
         if (!faceFunctions) {
-            log(`Unable to load FaceApi. Face detection/recognition will not be available.`);
+            log(
+                `Unable to load FaceApi. Face detection/recognition will not be available.`
+            );
         }
-        
+
         detectFaces = faceFunctions.detectFaces;
         recognizeFaces = faceFunctions.recognizeFaces;
 
-        log(`FaceApi loaded successfully.`);    
+        log(`FaceApi loaded successfully.`);
     });
 
     async function addDirectoryToDb(path) {
-        const files = scanDirectory(path, extensions);    
+        const files = scanDirectory(path, extensions);
         const promises = [];
-        
+
         log(`addDirectoryToDb: Start processing ${files.length} files.`);
 
-        const filesToProcess = files.filter((file) => shouldProcess(file, extensions));
-        log(`addDirectoryToDb: Filtered out ${files.length - filesToProcess.length} invalid files.`);
+        const filesToProcess = files.filter((file) =>
+            shouldProcess(file, extensions)
+        );
+        log(
+            `addDirectoryToDb: Filtered out ${
+                files.length - filesToProcess.length
+            } invalid files.`
+        );
 
-        const filesInfo = await processFilesSequentially(filesToProcess, collectionName);
+        const filesInfo = await processFilesSequentially(
+            filesToProcess,
+            collectionName
+        );
 
-        const fileInfoRecordsInserted = filesInfo.filter(fileInfo => fileInfo.ops.fileInfo === 'insert').length;
-        const faceDataRecordsInserted = filesInfo.filter(fileInfo => fileInfo.ops.faceData === 'insert').length;
+        const fileInfoRecordsInserted = filesInfo.filter(
+            (fileInfo) => fileInfo.ops.fileInfo === "insert"
+        ).length;
+        const faceDataRecordsInserted = filesInfo.filter(
+            (fileInfo) => fileInfo.ops.faceData === "insert"
+        ).length;
 
-        log(`addDirectoryToDb: Added ${fileInfoRecordsInserted} fileInfo records, ${faceDataRecordsInserted} faceData records. Finished.`);
+        log(
+            `addDirectoryToDb: Added ${fileInfoRecordsInserted} fileInfo records, ${faceDataRecordsInserted} faceData records. Finished.`
+        );
 
         const result = {
             result: {
                 fileInfoRecordsInserted,
-                faceDataRecordsInserted
+                faceDataRecordsInserted,
             },
             filesInfo,
-        }
+        };
 
         return result;
     }
@@ -78,7 +103,7 @@ function Photos(dbObject, collectionName) {
         log(`-- Processing file: ${file}`);
 
         const existingData = await getDataForFile(file);
-        
+
         let fileInfo;
         let faceData;
         let ops = {
@@ -88,16 +113,16 @@ function Photos(dbObject, collectionName) {
 
         if (Object.keys(existingData).length) {
             const presentRecords = [];
-            if (existingData.fileInfo) { 
+            if (existingData.fileInfo) {
                 fileInfo = existingData.fileInfo;
-                presentRecords.push('fileInfo');
+                presentRecords.push("fileInfo");
             }
             if (existingData.faceData) {
                 faceData = existingData.faceData;
-                presentRecords.push('faceData');
+                presentRecords.push("faceData");
             }
-            
-            log(`Already have the following: ${presentRecords.join(', ')}`);
+
+            log(`Already have the following: ${presentRecords.join(", ")}`);
         }
 
         let faceDataId = faceData?._id;
@@ -106,71 +131,80 @@ function Photos(dbObject, collectionName) {
             // Add a faceData record.
             const faceDataRecord = await processFaces(file);
             if (faceDataRecord) {
-                ops.faceData = 'insert';
+                ops.faceData = "insert";
                 faceData = faceDataRecord;
                 faceDataId = faceDataRecord._id;
 
-                const refRecords = await faceDataCollection.find({file:'assets/ref/jk_jess-johannes_02.jpg'}).toArray();
-                console.log('Ref Records:', refRecords.length)
-                const names = await recognizeFaces(faceData.faceData, refRecords.length ? refRecords[0].faceData : null);
-                console.log('Recognized:', names);    
+                const refRecords = await faceDataCollection
+                    .find({ file: "assets/ref/jk_jess-johannes_02.jpg" })
+                    .toArray();
+                const names = await recognizeFaces(
+                    faceData.faceData,
+                    refRecords.length ? refRecords[0].faceData : null
+                );
+                console.log("Recognized:", names);
             }
         }
 
         if (!fileInfo) {
             fileInfo = await new Promise(async (resolve) => {
                 let fileInfo = {};
-                
-                fileInfo = getBasicMeta(file, fileInfo);        
+
+                fileInfo = getBasicMeta(file, fileInfo);
                 fileInfo = await getExifData(file, fileInfo);
-                
+
                 // Add the link to face data if we have it.
                 if (faceDataId) {
                     fileInfo._faceDataId = faceDataId;
                 }
 
                 // Add the main fileInfo record.
-                const insertResult = await addFileToDb(fileInfo, collectionName);
+                const insertResult = await addFileToDb(
+                    fileInfo,
+                    collectionName
+                );
                 if (insertResult) {
-                    ops.fileInfo = 'insert';
+                    ops.fileInfo = "insert";
                 }
-                resolve(fileInfo);        
+                resolve(fileInfo);
             });
         }
 
         log(`Done with: ${file}`);
         return { ops, fileInfo, faceData };
     }
-      
+
     // Asynchronous function to process all files sequentially
     async function processFilesSequentially(filenames, collectionName) {
         const filesInfo = [];
         for (const filename of filenames) {
             filesInfo.push(await processFile(filename, collectionName));
         }
-    
+
         return filesInfo;
     }
-    
-    function shouldProcess(file = '', extensions = ['.jpg', '.jpeg']) {
+
+    function shouldProcess(file = "", extensions = [".jpg", ".jpeg"]) {
         const { extension, filename, dirname } = parsePath(file);
 
-        if (!(filename.substr(0,1) !== '.' && extensions.includes(extension))) {
+        if (
+            !(filename.substr(0, 1) !== "." && extensions.includes(extension))
+        ) {
             return false;
         }
 
         return true;
     }
-    
-    function getBasicMeta(file = '', fileInfo = {}) {
+
+    function getBasicMeta(file = "", fileInfo = {}) {
         if (!file) {
             return fileInfo;
         }
-        
+
         const { extension, filename, dirname } = parsePath(file);
         const { size, uid, gid } = fs.statSync(file);
-    
-        fileInfo = { 
+
+        fileInfo = {
             ...{
                 fullname: file,
                 extension,
@@ -179,72 +213,75 @@ function Photos(dbObject, collectionName) {
                 size,
                 uid,
                 gid,
-            }
+            },
         };
 
-        log(`Got basic meta for ${file}`)
+        log(`Got basic meta for ${file}`);
 
         return fileInfo;
     }
-      
-    function getExifData(file = '', fileInfo = {}) {
+
+    function getExifData(file = "", fileInfo = {}) {
         return new Promise((resolve) => {
             if (!file) {
                 resolve(fileInfo);
             }
-                                
+
             try {
                 const buffer = fs.readFileSync(file);
                 const parser = ExifParser.create(buffer);
-        
+
                 const tags = parser.parse();
-        
+
                 fileInfo.width = tags?.imageSize?.width;
                 fileInfo.height = tags?.imageSize?.height;
             } catch (err) {
                 console.log(err.message);
             }
-            
-            ExifReader
-                .load(file)
-                .then(data => {
+
+            ExifReader.load(file)
+                .then((data) => {
                     const tags = data;
                     // Convert the date-time info to a JS parseable string.
                     const convertDateTime = (dateTimeRaw) => {
-                        const parts = dateTimeRaw.split(' ');
-                        const date = parts[0].replaceAll(':', '-');
+                        const parts = dateTimeRaw.split(" ");
+                        const date = parts[0].replaceAll(":", "-");
                         const time = parts[1];
-                        return date + ' ' + time;                            
-                    }
-        
+                        return date + " " + time;
+                    };
+
                     const exifData = {
-                        width: fileInfo.width ?? tags['Image Width']?.value,
-                        height: fileInfo.height ?? tags['Image Height']?.value,
-                        dateTime: convertDateTime(tags['DateTimeOriginal']?.value[0] ?? tags['DateTimeDigitized']?.value[0] ?? ''),
-                        device: { 
-                            make: tags['Make']?.value,
-                            model: tags['Model']?.value,
+                        width: fileInfo.width ?? tags["Image Width"]?.value,
+                        height: fileInfo.height ?? tags["Image Height"]?.value,
+                        dateTime: convertDateTime(
+                            tags["DateTimeOriginal"]?.value[0] ??
+                                tags["DateTimeDigitized"]?.value[0] ??
+                                ""
+                        ),
+                        device: {
+                            make: tags["Make"]?.value,
+                            model: tags["Model"]?.value,
                         },
-                        orientation: tags['Orientation']?.value,
-                    }
-    
+                        orientation: tags["Orientation"]?.value,
+                    };
+
                     if (exifData.width && exifData.height) {
                         fileInfo.aspect = exifData.width / exifData.height;
                     }
-        
+
                     fileInfo = {
                         ...fileInfo,
                         ...exifData,
-                    }
+                    };
 
                     log(`Got exif data for ${file}`);
 
                     resolve(fileInfo);
                 })
-                .catch(err => {
+                .catch((err) => {
                     log(`Exif-Error: ${file} ${err.message}`);
                     resolve(fileInfo);
-                });     
+                });
         });
     }
 
@@ -255,61 +292,158 @@ function Photos(dbObject, collectionName) {
         if (faceData) {
             const faceDataRecord = {
                 file,
-                faceData
-            }
+                faceData,
+            };
 
-            const faceDataCollection = getEnhancedCollection(db, collectionNameFaceData);
+            const faceDataCollection = getEnhancedCollection(
+                db,
+                collectionNameFaceData
+            );
             let result;
 
             try {
                 await faceDataCollection.insertOne(faceDataRecord, null);
                 log(`Added facedata record with id ${faceDataRecord._id}`);
-            } catch(err) {
+            } catch (err) {
                 // Couldn't insert.
             }
 
             // If the insert was successful, faceDataRecord now has an _id field.
             if (faceDataRecord._id) {
                 return faceDataRecord;
-            }                
+            }
         }
 
         return null;
     }
-    
-    async function getFaceData(file = '') {        
+
+    async function getFaceData(file = "") {
         if (!detectFaces) {
             log(`Unable to run face recognition, skipping.`);
             return null;
         }
-            
+
         let faceData;
 
         try {
             faceData = await detectFaces(file);
-        } catch(err) {
-            console.log(err)
+        } catch (err) {
+            console.log(err);
         }
-        
+
         log(`Got data for ${faceData.length} detected faces.`);
         return faceData;
     }
     
+
+    async function storeReferenceFaceData(faceDataRecordId, namesInfo = []) {
+        if (!faceDataRecordId || !namesInfo.length) {
+            return null;
+        }
+
+        // Make sure the indices are numbers.
+        namesInfo.forEach((nameinfo, index) => namesInfo[index].index = parseInt(namesInfo[index].index));
+
+        let referenceRecord = await referenceCollection.findFirst({faceDataRecordId});
+
+        if (!referenceRecord) {
+            referenceRecord = {
+                faceDataRecordId,
+                namesInfo: [ ...namesInfo],
+            }
+
+            await referenceCollection.insertOne(referenceRecord, null);            
+            log(`Created reference record for faceDataRecord ${faceDataRecordId}`);
+        } else {
+            referenceRecord.namesInfo = [ ...namesInfo ];
+            log(`Updating reference record ${referenceRecord._id}`);
+            await referenceCollection.mUpdateOne({faceDataRecordId}, referenceRecord);                    
+        };
+
+
+        // Retrieve the faceDataRecord
+        const faceDataRecord = await faceDataCollection.findFirst({_id: new ObjectId(faceDataRecordId)});
+    
+        if (!faceDataRecord) {
+            log(`Error: FaceDataRecord is missing!`);
+            return;
+        }
+
+        /**
+         * Go through each object in namesInfo, and
+         * - retrieve or create a people record
+         * - check if the descriptor from faceDataRecordId is already present; add it if not
+         */
+
+        namesInfo.forEach(async (nameInfo) => {
+            const { index, firstName, lastName } = nameInfo;
+            const fullName = `${firstName} ${lastName}`;
+            
+            let personRecord = await peopleCollection.findFirst({fullName});
+
+            const faceDataInfo = faceDataRecord.faceData.find(item => item.faceIndex === index);
+            const { faceDescriptor } = faceDataInfo;
+            
+            // Store the descriptor with a reference to where it came from.
+            const faceDescriptorObject = {
+                faceDataRecordId: new ObjectId(faceDataRecordId),
+                faceDescriptor
+            }
+
+            if (personRecord) {
+                // Person record exists. 
+                
+                // See if this descriptor already exists.
+                const existingDescriptor = personRecord.faceDescriptors.find(faceDescriptorObject => {
+                    return faceDescriptorObject.faceDataRecordId.toString() === faceDataRecordId
+                });
+                
+                if (existingDescriptor) {
+                    // Nothing to do.
+                    log(`Provided faceDescriptor already exists - not updating ${fullName}'s person record.`);
+                    return true;
+                }
+
+                personRecord.faceDescriptors.push(faceDescriptorObject);
+
+                await peopleCollection.mUpdateOne({_id: personRecord._id}, personRecord);
+
+                log(`Added face descriptor to ${fullName}. They now have ${personRecord.faceDescriptors.length}.`);
+                return true;
+            } 
+            
+            // Person record doesn't exist yet, this is the first descriptor for this person.
+            personRecord = {
+                fullName,
+                firstName,
+                lastName,
+                faceDescriptors: [ faceDescriptorObject ],
+            }
+
+            await peopleCollection.insertOne(personRecord, null);
+            log(`Created person record for ${fullName}.`);            
+        })        
+    }
+
     /**
      * Get an object with fileInfo and faceData record, if present.
      */
     async function getDataForFile(file) {
         let data = {};
 
-        try {            
+        try {
             // See if we have a fileInfo record.
-            const records = await fileInfoCollection.find({'fullname': file}).toArray();
+            const records = await fileInfoCollection
+                .find({ fullname: file })
+                .toArray();
             if (records.length) {
                 data.fileInfo = records[0];
             }
 
             // See if we have face data.
-            const faceDataRecords = await faceDataCollection.find({file}).toArray();            
+            const faceDataRecords = await faceDataCollection
+                .find({ file })
+                .toArray();
             if (faceDataRecords.length) {
                 // Found face data.
                 data.faceData = faceDataRecords[0];
@@ -323,10 +457,15 @@ function Photos(dbObject, collectionName) {
         return data;
     }
 
-    async function addFileToDb(fileInfo, collectionName = constants.defaultCollectionName) {
+    async function addFileToDb(
+        fileInfo,
+        collectionName = constants.defaultCollectionName
+    ) {
         let result;
         try {
-            result = await fileInfoCollection.insertOne(fileInfo, null, ['fullname']);
+            result = await fileInfoCollection.insertOne(fileInfo, null, [
+                "fullname",
+            ]);
             log(`Added fileInfo record with id ${fileInfo._id}`);
         } catch (err) {
             console.log(err);
@@ -335,13 +474,17 @@ function Photos(dbObject, collectionName) {
         return result;
     }
 
-    async function getRandomPicture(collectionName = constants.defaultCollectionName) {
+    async function getRandomPicture(
+        collectionName = constants.defaultCollectionName
+    ) {
         let result;
         try {
-            result = await fileInfoCollection.aggregate([{ $sample: {size: 1} }]).toArray();  
+            result = await fileInfoCollection
+                .aggregate([{ $sample: { size: 1 } }])
+                .toArray();
         } catch (err) {
             console.log(err);
-        }        
+        }
 
         return result;
     }
@@ -353,7 +496,7 @@ function Photos(dbObject, collectionName) {
         } catch (err) {
             console.log(err);
             return -1;
-        }        
+        }
     }
 
     async function getRecords() {
@@ -363,21 +506,24 @@ function Photos(dbObject, collectionName) {
         } catch (err) {
             console.log(err);
             return [];
-        }        
+        }
     }
 
     async function getRecordWithIndex(index = 0) {
         try {
             index = parseInt(index);
-            const records = await fileInfoCollection.find({}).skip(index).limit(1).toArray();            
-            const record = records.length ? records[0] : null;            
+            const records = await fileInfoCollection
+                .find({})
+                .skip(index)
+                .limit(1)
+                .toArray();
+            const record = records.length ? records[0] : null;
             return record;
         } catch (err) {
             console.log(err);
             return [];
-        }        
+        }
     }
-
 
     async function getDataForFileWithIndex(index = 0) {
         try {
@@ -387,13 +533,12 @@ function Photos(dbObject, collectionName) {
             if (record) {
                 data = await getDataForFile(record.fullname);
             }
-            
-            
-            return data;                        
+
+            return data;
         } catch (err) {
             console.log(err);
             return [];
-        }        
+        }
     }
 
     return {
@@ -403,9 +548,8 @@ function Photos(dbObject, collectionName) {
         getDataForFileWithIndex,
         getRecords,
         getRecordWithIndex,
-    };    
+        storeReferenceFaceData,
+    };
 }
-
-
 
 export default Photos;

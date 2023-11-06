@@ -91,6 +91,14 @@ const initRouter = (express, db, photos) => {
     }        
   });
 
+  dbRouter.post('/faceData', async (req, res) => {
+    const { faceDataRecordId, namesInfo } = req.body;
+    if (faceDataRecordId && namesInfo) {
+        photos.storeReferenceFaceData(faceDataRecordId, namesInfo);
+    }
+    res.json(req.body)
+  });
+
   return dbRouter;
 }
 
