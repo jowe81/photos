@@ -67,14 +67,16 @@ function constructSortObject(columns) {
 }
 
 function constructUpdate(doc) {
-    delete doc._id;
-    delete doc.created_at;
-    delete doc.updated_at;
+    const docCopy = { ...doc };
+
+    delete docCopy._id;
+    delete docCopy.created_at;
+    delete docCopy.updated_at;
     
     const update = {};
 
-    Object.keys(doc).forEach(key => {
-        update[key] = doc[key];
+    Object.keys(docCopy).forEach(key => {
+        update[key] = docCopy[key];
     })
 
     update.updated_at = new Date();

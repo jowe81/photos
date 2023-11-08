@@ -138,11 +138,11 @@ function Photos(dbObject, collectionName) {
                 const refRecords = await faceDataCollection
                     .find({ file: "assets/ref/jk_jess-johannes_02.jpg" })
                     .toArray();
-                const names = await recognizeFaces(
-                    faceData.faceData,
-                    refRecords.length ? refRecords[0].faceData : null
-                );
-                console.log("Recognized:", names);
+                // const names = await recognizeFaces(
+                //     faceData.faceData,
+                //     refRecords.length ? refRecords[0].faceData : null
+                // );
+                // console.log("Recognized:", names);
             }
         }
 
@@ -344,50 +344,42 @@ function Photos(dbObject, collectionName) {
         // Make sure the indices are numbers.
         namesInfo.forEach((nameinfo, index) => namesInfo[index].index = parseInt(namesInfo[index].index));
 
-        let referenceRecord = await referenceCollection.findFirst({faceDataRecordId});
-
-        if (!referenceRecord) {
-            referenceRecord = {
-                faceDataRecordId,
-                namesInfo: [ ...namesInfo],
-            }
-
-            await referenceCollection.insertOne(referenceRecord, null);            
-            log(`Created reference record for faceDataRecord ${faceDataRecordId}`);
-        } else {
-            referenceRecord.namesInfo = [ ...namesInfo ];
-            log(`Updating reference record ${referenceRecord._id}`);
-            await referenceCollection.mUpdateOne({faceDataRecordId}, referenceRecord);                    
-        };
-
-
         // Retrieve the faceDataRecord
         const faceDataRecord = await faceDataCollection.findFirst({_id: new ObjectId(faceDataRecordId)});
     
         if (!faceDataRecord) {
-            log(`Error: FaceDataRecord is missing!`);
+            log(`Error: FaceDataRecord ${faceDataRecordId} is missing!`);
             return;
         }
 
         /**
          * Go through each object in namesInfo, and
          * - retrieve or create a people record
-         * - check if the descriptor from faceDataRecordId is already present; add it if not
+         * - check if the descriptor from faceDataRecordId is already present
+         * - if it's not: add it, and conversely put a personId on the faceInfo in faceDataRecord
          */
 
         namesInfo.forEach(async (nameInfo) => {
             const { index, firstName, lastName } = nameInfo;
+
+            if (!firstName || !lastName) {
+                // Nothing to do - no actual information was sent.
+                log(`Skipping nameInfo ${index}, it has no data.`);
+                return;
+            }
+
             const fullName = `${firstName} ${lastName}`;
-            
+            log(`Processing data for ${fullName}.`);
+
             let personRecord = await peopleCollection.findFirst({fullName});
 
-            const faceDataInfo = faceDataRecord.faceData.find(item => item.faceIndex === index);
-            const { faceDescriptor } = faceDataInfo;
+            const faceDataInfo = faceDataRecord.faceData.find(item => item.index === index);
+            const { descriptor } = faceDataInfo.detection;
             
             // Store the descriptor with a reference to where it came from.
             const faceDescriptorObject = {
                 faceDataRecordId: new ObjectId(faceDataRecordId),
-                faceDescriptor
+                descriptor,
             }
 
             if (personRecord) {
@@ -400,7 +392,7 @@ function Photos(dbObject, collectionName) {
                 
                 if (existingDescriptor) {
                     // Nothing to do.
-                    log(`Provided faceDescriptor already exists - not updating ${fullName}'s person record.`);
+                    log(`Provided faceDescriptor already exists for ${fullName} - not updating their person record.`);
                     return true;
                 }
 
@@ -421,7 +413,24 @@ function Photos(dbObject, collectionName) {
             }
 
             await peopleCollection.insertOne(personRecord, null);
-            log(`Created person record for ${fullName}.`);            
+            log(`Created person record for ${fullName}.`);    
+
+            
+            let faceDataItemIndex = null;
+            
+            faceDataRecord.faceData.every((item, index) => {                
+                if (item.index === nameInfo.index) {
+                    faceDataItemIndex = index;
+                    return false;
+                }
+                return true;
+            });
+
+            faceDataRecord.faceData[faceDataItemIndex].personId = personRecord._id;
+
+            await faceDataCollection.mUpdateOne({_id: faceDataRecord._id}, faceDataRecord);
+
+            log(`Updated faceDataRecord ${faceDataRecord._id}`)
         })        
     }
 
@@ -455,6 +464,13 @@ function Photos(dbObject, collectionName) {
         }
 
         return data;
+    }
+
+    /**
+     * See if the descriptor is referenced by a person and return the record if so.
+     */
+    async function getReferencingPersonRecord(faceDescriptor) {
+
     }
 
     async function addFileToDb(

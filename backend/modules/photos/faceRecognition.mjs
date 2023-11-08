@@ -20,10 +20,8 @@ async function getFaceFunctions() {
             .withFaceDescriptors();
 
         // Create an array of objects with face information
-        const faceInfo = detections.map((detection, i) => ({
-            faceNumber: i + 1,
-            faceIndex: i,
-            faceDescriptor: detection.descriptor,
+        const faceInfo = detections.map((detection, index) => ({
+            index,
             detection,
         }));
 
@@ -47,7 +45,7 @@ async function getFaceFunctions() {
          * [
          *    {
          *      faceNumber:
-         *      faceDescriptor:
+         *      descriptor:
          *    }
          * ]
          **/
@@ -59,17 +57,15 @@ async function getFaceFunctions() {
 
         // Go through all the faces found in the image.
         for (const faceInfo of faceData) {
-            const { faceDescriptor } = faceInfo;
+            const { descriptor } = faceInfo.detection;
 
             // Compare the detected face descriptor with each reference face descriptor
             const distances = referenceFaceData.map((referenceFace) => {
-                const referenceFaceDescriptor = dbObjToFloatArray(
-                    referenceFace.faceDescriptor
-                );
+                const referenceFaceDescriptor = dbObjToFloatArray(referenceFace.detection.descriptor);
                 return {
                     name: referenceFace.faceId ?? referenceFace.faceNumber,
                     distance: faceapi.euclideanDistance(
-                        faceDescriptor,
+                        descriptor,
                         referenceFaceDescriptor
                     ),
                 };
@@ -88,7 +84,7 @@ async function getFaceFunctions() {
             if (closestMatch.distance <= threshold) {
                 console.log(Object.keys(closestMatch));
                 matchedFaces.push({
-                    faceDescriptor,
+                    descriptor,
                     referenceName: closestMatch.name,
                     similarity: 1 - closestMatch.distance,
                 });
