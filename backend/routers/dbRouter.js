@@ -77,8 +77,7 @@ const initRouter = (express, db, photos) => {
         const fileData = await photos.getDataForFileWithIndex(index);                        
 
         const data = {
-          faceData: fileData.faceData,
-          fileInfo: fileData.fileInfo,
+          ...fileData,
           count,
           index,
         }  

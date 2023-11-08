@@ -27,12 +27,7 @@ function Image(props: any) {
         const canvas: any = canvasRef.current;
         const context = canvas.getContext("2d");
 
-        // Set the red border color
-        context.strokeStyle = "red";
-
-        faceData.forEach((item: any) => {
-            console.log("detection: ", Object.keys(item.detection.alignedRect));
-
+        faceData.forEach((item: any, index: number) => {
             let box;
             if (item.detection?._box) {
                 box = item.detection._box;
@@ -44,16 +39,38 @@ function Image(props: any) {
             if (box) {
                 const { _x, _y, _width, _height } = box;
 
+                context.strokeStyle = "red";
+                
+                context.fillStyle = "rgba(255, 0, 0, 0.5"; // Semi transparent red
                 context.strokeRect(
                     _x * scale,
                     _y * scale,
                     _width * scale,
                     _height * scale
                 );
+
+                const indexRectHeight = 18;
+                const fontSize = 17;
+                context.font = `${fontSize}px Arial`;
+                
+                context.fillRect(
+                    _x * scale, 
+                    _y * scale + _height * scale, 
+                    _width * scale,
+                    indexRectHeight
+                )
+                context.fillStyle = "white"; // You can set any color you like
+                
+
+                // Use fillText to draw filled text
+                context.fillText(
+                    index, 
+                    _x * scale + 5, 
+                    _y * scale + _height * scale + indexRectHeight - 4
+                );
             }
         });
 
-        // Draw the red border
     }
 
     function onImageLoad(event: any) {

@@ -356,7 +356,7 @@ function Photos(dbObject, collectionName) {
          * Go through each object in namesInfo, and
          * - retrieve or create a people record
          * - check if the descriptor from faceDataRecordId is already present
-         * - if it's not: add it, and conversely put a personId on the faceInfo in faceDataRecord
+         * - if it's not: add it, and conversely put a personRecordId on the faceInfo in faceDataRecord
          */
 
         namesInfo.forEach(async (nameInfo) => {
@@ -426,11 +426,11 @@ function Photos(dbObject, collectionName) {
                 return true;
             });
 
-            faceDataRecord.faceData[faceDataItemIndex].personId = personRecord._id;
+            faceDataRecord.faceData[faceDataItemIndex].personRecordId = personRecord._id;
 
             await faceDataCollection.mUpdateOne({_id: faceDataRecord._id}, faceDataRecord);
 
-            log(`Updated faceDataRecord ${faceDataRecord._id}`)
+            log(`Updated faceDataRecord ${faceDataRecord._id}.`)
         })        
     }
 
@@ -450,12 +450,14 @@ function Photos(dbObject, collectionName) {
             }
 
             // See if we have face data.
-            const faceDataRecords = await faceDataCollection
-                .find({ file })
-                .toArray();
-            if (faceDataRecords.length) {
+            const faceDataRecord = await faceDataCollection.findFirst({ file })
+            if (faceDataRecord) {
                 // Found face data.
-                data.faceData = faceDataRecords[0];
+                data.faceData = { ...faceDataRecord };
+
+                // Get ids of people referenced in the faceData and pull the records.
+                const personRecordIds = faceDataRecord.faceData.map(item => item.personRecordId);
+                data.personRecords = await peopleCollection.find({ _id: { $in: personRecordIds }}).toArray();
             }
 
             return data;

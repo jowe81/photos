@@ -12,8 +12,8 @@ function App() {
 
     const fileInfo = payload?.fileInfo;
     const faceData = payload?.faceData;
+    const personRecords = payload?.personRecords;
     const faceDataRecordId = payload?.faceData?._id;
-
     const baseUrl = "http://192.168.1.199:3020/";
     if (fileInfo) {
         fileInfo.fullUrl = baseUrl + fileInfo.fullname;
@@ -63,6 +63,7 @@ function App() {
         baseUrl,
         fileInfo: { ...fileInfo },
         faceData: faceData?.faceData,
+        personRecords,
         faceDataRecordId,
         onNextClick: next,
         onPrevClick: prev,

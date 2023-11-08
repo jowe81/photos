@@ -3,7 +3,7 @@ import "./form.css";
 import axios from "axios";
 
 function Form(props: any) {
-    const { fileInfo, faceData, faceDataRecordId, baseUrl, onNextClick, onPrevClick } =
+    const { fileInfo, faceData, personRecords, faceDataRecordId, baseUrl, onNextClick, onPrevClick } =
         props;
 
     const [names, setNames] = useState([]);
@@ -13,11 +13,13 @@ function Form(props: any) {
             // Initialize form fields.
             setNames(
                 faceData.map((item: any, index: number) => {
+                    const personRecord = personRecords.find((personRecord: any) => personRecord._id === item.personRecordId);
+
                     return {
                         index,
-                        firstName: item.firstName ?? "",
-                        lastName: item.lastName ?? "",
-                        personId: item.personId,
+                        firstName: personRecord?.firstName ?? "",
+                        lastName: personRecord?.lastName ?? "",
+                        personRecordId: item.personRecordId,
                     };
                 })
             );
@@ -25,23 +27,19 @@ function Form(props: any) {
     }, [faceData]);
 
     const handleNameChange = (event: any) => {
-        const { fieldName, index, personId } = event.target.dataset;
+        const { fieldName, index, personRecordId } = event.target.dataset;
         const newNames: any = [...names];
         console.log(`Updating field ${fieldName}`);
         const oldData = names[index];
 
         const newData = (typeof oldData === "object") ? { ...oldData } : {};
 
-        console.log(newData);
         newNames[index] = {
             ...newData,
             index,
-            // firstName: oldData.firstName,
-            // lastName: oldData.lastName,
             [fieldName]: event.target.value,
-            personId,
+            personRecordId,
         };
-        console.log('After add', newNames[index])
         setNames(newNames);
     };
 
@@ -53,12 +51,8 @@ function Form(props: any) {
             namesInfo: [...names],
         };
 
-        console.log("Requestbody", requestBody);
         axios
             .post(`${baseUrl}db/faceData`, requestBody)
-            .then(data => {
-                console.log('Got back', data.data);
-            })
             .catch(err => {
                 console.error(err.message);
             })
@@ -89,7 +83,7 @@ function Form(props: any) {
                                         id={`firstName${index}`}
                                         name={`firstName${index}`}
                                         data-field-name="firstName"
-                                        data-person-id={nameInfo.personId}
+                                        data-person-id={nameInfo.personRecordId}
                                         data-index={index}
                                         value={nameInfo.firstName}
                                         onChange={handleNameChange}
@@ -101,7 +95,7 @@ function Form(props: any) {
                                         id={`lastName${index}`}
                                         name={`lastName${index}`}
                                         data-field-name="lastName"
-                                        data-person-id={nameInfo.personId}
+                                        data-person-id={nameInfo.personRecordId}
                                         data-index={index}
                                         value={nameInfo.lastName}
                                         onChange={handleNameChange}
