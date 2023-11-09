@@ -9,6 +9,7 @@ function App() {
     const [count, setCount] = useState(0);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [payload, setPayload] = useState<any>();
+    const [fetchData, setFetchData] = useState(false);
 
     const fileInfo = payload?.fileInfo;
     const faceData = payload?.faceData;
@@ -41,7 +42,8 @@ function App() {
         setCurrentIndex(newIndex);
     };
 
-    useEffect(() => {
+    const fetchImageData = () => {
+        console.log("Effect fetching")
         axios
             .get(`${baseUrl}db/photo?index=${currentIndex}`)
             .then((data: any) => {
@@ -49,7 +51,7 @@ function App() {
                     const payload = data.data.data;
                     setPayload({ ...payload });
                     console.log("Payload", payload);
-                    setCount(payload.count);
+                    setCount(payload.count);                    
                 }
             })
             .catch((err) =>
@@ -57,7 +59,14 @@ function App() {
                     `Unable to retrieve fileInfo with index ${currentIndex}`
                 )
             );
-    }, [currentIndex]);
+    }
+
+    const refetchImageData = () => {
+        console.log('REFETCHING', fetchData)        
+        setFetchData(!fetchData);
+    }
+
+    useEffect(fetchImageData, [currentIndex, fetchData]);
 
     const props = {
         baseUrl,
@@ -67,6 +76,8 @@ function App() {
         faceDataRecordId,
         onNextClick: next,
         onPrevClick: prev,
+        refetchImageData,
+        shouldRedraw: payload,
     };
 
     return (

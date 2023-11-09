@@ -3,7 +3,7 @@ import "./form.css";
 import axios from "axios";
 
 function Form(props: any) {
-    const { fileInfo, faceData, personRecords, faceDataRecordId, baseUrl, onNextClick, onPrevClick } =
+    const { fileInfo, faceData, personRecords, faceDataRecordId, baseUrl, onNextClick, onPrevClick, refetchImageData } =
         props;
 
     const [names, setNames] = useState([]);
@@ -20,6 +20,7 @@ function Form(props: any) {
                         firstName: personRecord?.firstName ?? "",
                         lastName: personRecord?.lastName ?? "",
                         personRecordId: item.personRecordId,
+                        readOnly: item.isReferenceDescriptor,
                     };
                 })
             );
@@ -53,11 +54,12 @@ function Form(props: any) {
 
         axios
             .post(`${baseUrl}db/faceData`, requestBody)
+            .then(refetchImageData)
             .catch(err => {
                 console.error(err.message);
             })
     };
-
+    
     return (
         <div>
             <div>
@@ -85,6 +87,8 @@ function Form(props: any) {
                                         data-field-name="firstName"
                                         data-person-id={nameInfo.personRecordId}
                                         data-index={index}
+                                        readOnly={nameInfo.readOnly}
+                                        disabled={nameInfo.readOnly}
                                         value={nameInfo.firstName}
                                         onChange={handleNameChange}
                                     />
@@ -95,8 +99,10 @@ function Form(props: any) {
                                         id={`lastName${index}`}
                                         name={`lastName${index}`}
                                         data-field-name="lastName"
-                                        data-person-id={nameInfo.personRecordId}
+                                        data-person-id={nameInfo.personRecordId}                                        
                                         data-index={index}
+                                        readOnly={nameInfo.readOnly}
+                                        disabled={nameInfo.readOnly}
                                         value={nameInfo.lastName}
                                         onChange={handleNameChange}
                                     />

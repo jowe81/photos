@@ -427,6 +427,7 @@ function Photos(dbObject, collectionName) {
             });
 
             faceDataRecord.faceData[faceDataItemIndex].personRecordId = personRecord._id;
+            faceDataRecord.faceData[faceDataItemIndex].isReferenceDescriptor = true;
 
             await faceDataCollection.mUpdateOne({_id: faceDataRecord._id}, faceDataRecord);
 

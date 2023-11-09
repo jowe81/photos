@@ -5,6 +5,8 @@ function Image(props: any) {
     const imageUrl = props.fileInfo.fullUrl;
     const fileInfo = props.fileInfo;
     const faceData = props.faceData;
+    const shouldRedraw = props.shouldRedraw;
+    
     const canvasRef = useRef(null);
     const imageRef = useRef(null);
     const [imageDimensions, setImageDimensions] = useState({
@@ -19,15 +21,38 @@ function Image(props: any) {
     const maxWidth = 650;
     const maxHeight = maxWidth / displayAspect;
 
-    useEffect(drawBoxes, [imageDimensions]);
+    useEffect(drawBoxes, [imageDimensions, shouldRedraw]);
 
     function drawBoxes() {
-        console.log(`Drawing boxes`, imageDimensions);
+        console.log(`Drawing boxes`, imageDimensions);        
 
         const canvas: any = canvasRef.current;
         const context = canvas.getContext("2d");
 
-        faceData.forEach((item: any, index: number) => {
+        // Start fresh
+        context.clearRect(0, 0, canvas.width, canvas.height);
+
+        faceData?.forEach((item: any, index: number) => {
+
+            // Styles for unrecognized faces
+            let strokeStyleBox = "rgba(255, 0, 0, 1)";
+            let fillStyleBoxBelow = "rgba(255, 0, 0, .5)";
+
+            if (item.personRecordId) {                
+                if (item.isReferenceDescriptor) {
+                    // Info has been set as reference descriptor.
+                    strokeStyleBox = "rgba(128, 255, 128, 1)";
+                    fillStyleBoxBelow = "rgba(128, 255, 128, .5)";
+                } else {
+                    // Info is here as a result of automatic matching.
+                    strokeStyleBox = "rgba(128, 128, 255, 1)";
+                    fillStyleBoxBelow = "rgba(128, 128, 255, .5)";
+                }
+    
+            }
+            console.log('Box stroke', strokeStyleBox);
+            console.log('BoxBelow', fillStyleBoxBelow)
+            
             let box;
             if (item.detection?._box) {
                 box = item.detection._box;
@@ -39,9 +64,9 @@ function Image(props: any) {
             if (box) {
                 const { _x, _y, _width, _height } = box;
 
-                context.strokeStyle = "red";
-                
-                context.fillStyle = "rgba(255, 0, 0, 0.5"; // Semi transparent red
+                context.strokeStyle = strokeStyleBox;                
+                context.fillStyle = fillStyleBoxBelow;
+
                 context.strokeRect(
                     _x * scale,
                     _y * scale,
@@ -62,9 +87,9 @@ function Image(props: any) {
                 context.fillStyle = "white"; // You can set any color you like
                 
 
-                // Use fillText to draw filled text
+                // Image Number
                 context.fillText(
-                    index, 
+                    index + 1, 
                     _x * scale + 5, 
                     _y * scale + _height * scale + indexRectHeight - 4
                 );
