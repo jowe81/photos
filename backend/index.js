@@ -25,12 +25,12 @@ const port = process.env.PORT ?? 3020;
 
 log(`Welcome to ${appName}. Backend is starting up...`);
 
-mongoConnect().then(({db_mongo_database, db}) => {
+mongoConnect().then(async ({db_mongo_database, db}) => {
   log(`Connected to database ${db_mongo_database}`);
 
   const promises = [];
 
-  const photos = Photos(db);
+  const photos = await Photos(db);
 
   Promise
     .allSettled(promises)
@@ -43,8 +43,6 @@ mongoConnect().then(({db_mongo_database, db}) => {
       server.listen(port, () => {
         log(`API Server is listening on port ${port}.`);
       })
-
-
 
     });
 }).catch(err => {

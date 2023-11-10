@@ -20,9 +20,9 @@ async function getFaceFunctions() {
             .withFaceDescriptors();
 
         // Create an array of objects with face information
-        const faceInfo = detections.map((detection, index) => ({
+        const faceInfo = detections.map((data, index) => ({
             index,
-            detection,
+            data,
         }));
 
         return faceInfo;
@@ -49,9 +49,7 @@ async function getFaceFunctions() {
          *    }
          * ]
          **/
-        if (!Array.isArray(faceData) || !Array.isArray(referenceFaceData)) {
-            return;
-        }
+        return;
 
         const matchedFaces = [];
 

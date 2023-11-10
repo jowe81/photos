@@ -12,10 +12,8 @@ import { getEnhancedCollection } from "../../db/dbutils.js";
 import { getFaceFunctions } from "./faceRecognition.mjs";
 
 import { log } from "./../Log.js";
-import { resolve } from "path";
-import { Console } from "console";
 
-function Photos(dbObject, collectionName) {
+async function Photos(dbObject, collectionName) {
     const db = dbObject;
 
     if (!collectionName) {
@@ -44,18 +42,18 @@ function Photos(dbObject, collectionName) {
     // Initialize facepi
     let detectFaces, recognizeFaces;
 
-    getFaceFunctions().then((faceFunctions) => {
-        if (!faceFunctions) {
-            log(
-                `Unable to load FaceApi. Face detection/recognition will not be available.`
-            );
-        }
+    const faceFunctions = await getFaceFunctions();
 
+    if (!faceFunctions) {
+        log(
+            `Unable to load FaceApi. Face detection/recognition will not be available.`
+        );
+    } else {
         detectFaces = faceFunctions.detectFaces;
         recognizeFaces = faceFunctions.recognizeFaces;
 
         log(`FaceApi loaded successfully.`);
-    });
+    }
 
     async function addDirectoryToDb(path) {
         const files = scanDirectory(path, extensions);
@@ -389,7 +387,7 @@ function Photos(dbObject, collectionName) {
                 // Make a copy for the person record, with a reference to where it came from.
                 const faceDescriptorObject = {
                     faceDataRecordId: new ObjectId(faceDataRecordId),
-                    detection: { ...detectionOnFaceDataRecord }
+                    data: { ...detectionOnFaceDataRecord }
                 }
 
                 personRecord.faceDescriptors.push(faceDescriptorObject);
@@ -450,11 +448,46 @@ function Photos(dbObject, collectionName) {
         return data;
     }
 
+    async function getPersonRecords(filter = {}) {
+        return await peopleCollection.find({}).toArray();
+    }
+
     /**
      * See if the descriptor is referenced by a person and return the record if so.
      */
     async function getReferencingPersonRecord(faceDescriptor) {
 
+    }
+
+    async function recognizeFacesInFile(fileData, personRecords) {
+        
+        const faceDataRecord = fileData.faceData;
+        const { faceData } = faceDataRecord;
+        if (!Array.isArray(faceData) || !Array.isArray(personRecords)) {
+            return null;
+        }
+
+        const result = [];
+
+        for (let h = 0; h < faceData.length; h++) {
+            let resultThisFace;            
+
+            for (let i = 0; i < personRecords.length; i++) {
+                const personRecord = personRecords[i];
+                const { faceDescriptors } = personRecord;
+    
+                if (!Array.isArray(faceDescriptors)) {
+                    continue;
+                }
+                for (let j = 0; j < faceDescriptors.length; j++) {
+                    log(`Face ${h}, person ${i}, reference ${j}`);
+                    const referenceFaceData = faceDescriptors[j];
+                    result.push(await recognizeFaces(faceData, referenceFaceData.data));
+                }
+            }        
+        }
+
+        return result;
     }
 
     async function addFileToDb(
@@ -546,9 +579,11 @@ function Photos(dbObject, collectionName) {
         getRandomPicture,
         getCount,
         getDataForFileWithIndex,
-        getRecords,
+        getPersonRecords,
+        getRecords,    
         getRecordWithIndex,
         storeReferenceFaceData,
+        recognizeFacesInFile,
     };
 }
 

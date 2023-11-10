@@ -54,11 +54,11 @@ function Image(props: any) {
             console.log('BoxBelow', fillStyleBoxBelow)
             
             let box;
-            if (item.detection?._box) {
-                box = item.detection._box;
-            } else if (item.detection.detection) {
+            if (item.data?._box) {
+                box = item.data._box;
+            } else if (item.data.detection) {
                 // These may not always match
-                box = item.detection.detection?._box;
+                box = item.data.detection?._box;
             }
 
             if (box) {
