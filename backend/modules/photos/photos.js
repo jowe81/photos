@@ -134,15 +134,6 @@ function Photos(dbObject, collectionName) {
                 ops.faceData = "insert";
                 faceData = faceDataRecord;
                 faceDataId = faceDataRecord._id;
-
-                const refRecords = await faceDataCollection
-                    .find({ file: "assets/ref/jk_jess-johannes_02.jpg" })
-                    .toArray();
-                // const names = await recognizeFaces(
-                //     faceData.faceData,
-                //     refRecords.length ? refRecords[0].faceData : null
-                // );
-                // console.log("Recognized:", names);
             }
         }
 
@@ -359,80 +350,64 @@ function Photos(dbObject, collectionName) {
          * - if it's not: add it, and conversely put a personRecordId on the faceInfo in faceDataRecord
          */
 
-        namesInfo.forEach(async (nameInfo) => {
+        for (const nameInfo of namesInfo) {
             const { index, firstName, lastName } = nameInfo;
 
             if (!firstName || !lastName) {
                 // Nothing to do - no actual information was sent.
                 log(`Skipping nameInfo ${index}, it has no data.`);
-                return;
+                continue;
             }
 
             const fullName = `${firstName} ${lastName}`;
             log(`Processing data for ${fullName}.`);
 
+            // See if we have a record for the person referenced.
             let personRecord = await peopleCollection.findFirst({fullName});
 
-            const faceDataInfo = faceDataRecord.faceData.find(item => item.index === index);
-            const { descriptor } = faceDataInfo.detection;
-            
-            // Store the descriptor with a reference to where it came from.
-            const faceDescriptorObject = {
-                faceDataRecordId: new ObjectId(faceDataRecordId),
-                descriptor,
-            }
+            // Create if not exists.
+            if (!personRecord) {
+                personRecord = {
+                    fullName,
+                    firstName,
+                    lastName,
+                    faceDescriptors: [],
+                }
 
-            if (personRecord) {
-                // Person record exists. 
-                
-                // See if this descriptor already exists.
-                const existingDescriptor = personRecord.faceDescriptors.find(faceDescriptorObject => {
-                    return faceDescriptorObject.faceDataRecordId.toString() === faceDataRecordId
-                });
-                
-                if (existingDescriptor) {
-                    // Nothing to do.
-                    log(`Provided faceDescriptor already exists for ${fullName} - not updating their person record.`);
-                    return true;
+                await peopleCollection.insertOne(personRecord);
+            }
+                     
+            // Find the descriptor for this person on the faceDataRecord
+            const detectionOnFaceDataRecord = faceDataRecord.faceData.find(item => item.index === index);
+               
+            // See if this descriptor already exists on the person.
+            const existingDescriptor = personRecord.faceDescriptors.find(faceDescriptorObject => {
+                return faceDescriptorObject.faceDataRecordId.toString() === faceDataRecordId
+            });
+            
+            if (!existingDescriptor) {
+                // Make a copy for the person record, with a reference to where it came from.
+                const faceDescriptorObject = {
+                    faceDataRecordId: new ObjectId(faceDataRecordId),
+                    detection: { ...detectionOnFaceDataRecord }
                 }
 
                 personRecord.faceDescriptors.push(faceDescriptorObject);
-
                 await peopleCollection.mUpdateOne({_id: personRecord._id}, personRecord);
-
+                
                 log(`Added face descriptor to ${fullName}. They now have ${personRecord.faceDescriptors.length}.`);
-                return true;
-            } 
-            
-            // Person record doesn't exist yet, this is the first descriptor for this person.
-            personRecord = {
-                fullName,
-                firstName,
-                lastName,
-                faceDescriptors: [ faceDescriptorObject ],
+            } else {
+                // Nothing to do.
+                log(`Provided faceDescriptor already exists for ${fullName} - not updating their person record.`);
             }
 
-            await peopleCollection.insertOne(personRecord, null);
-            log(`Created person record for ${fullName}.`);    
+            // Mark this on the faceDataRecord as a reference descriptor for this person.
+            detectionOnFaceDataRecord.isReferenceDescriptor = true;
+            detectionOnFaceDataRecord.personRecordId = personRecord._id;
+            await faceDataCollection.mUpdateOne({_id: faceDataRecord._id}, faceDataRecord);        
 
-            
-            let faceDataItemIndex = null;
-            
-            faceDataRecord.faceData.every((item, index) => {                
-                if (item.index === nameInfo.index) {
-                    faceDataItemIndex = index;
-                    return false;
-                }
-                return true;
-            });
-
-            faceDataRecord.faceData[faceDataItemIndex].personRecordId = personRecord._id;
-            faceDataRecord.faceData[faceDataItemIndex].isReferenceDescriptor = true;
-
-            await faceDataCollection.mUpdateOne({_id: faceDataRecord._id}, faceDataRecord);
-
-            log(`Updated faceDataRecord ${faceDataRecord._id}.`)
-        })        
+            log(`Updated faceDataRecord ${faceDataRecord._id}, marking this descriptor as reference to ${fullName}.`);
+        }        
     }
 
     /**
@@ -458,7 +433,13 @@ function Photos(dbObject, collectionName) {
 
                 // Get ids of people referenced in the faceData and pull the records.
                 const personRecordIds = faceDataRecord.faceData.map(item => item.personRecordId);
-                data.personRecords = await peopleCollection.find({ _id: { $in: personRecordIds }}).toArray();
+                data.personRecords = await peopleCollection.find({}).toArray();
+                data.personRecords.sort((a, b) => {
+                    const composedA = a.lastName + a.firstName;
+                    const composedB = b.lastName + b.firstName;
+
+                    return composedA > composedB ? 1 : -1;
+                });
             }
 
             return data;
