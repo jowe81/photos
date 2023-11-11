@@ -280,7 +280,7 @@ async function Photos(dbObject, collectionName) {
         // If we have face data, add a faceData record and return it.
         if (faceData) {
             const faceDataRecord = {
-                file,
+                fullname: file,
                 faceData,
             };
 
@@ -387,7 +387,7 @@ async function Photos(dbObject, collectionName) {
                 // Make a copy for the person record, with a reference to where it came from.
                 const faceDescriptorObject = {
                     faceDataRecordId: new ObjectId(faceDataRecordId),
-                    data: { ...detectionOnFaceDataRecord }
+                    ...detectionOnFaceDataRecord,
                 }
 
                 personRecord.faceDescriptors.push(faceDescriptorObject);
@@ -424,7 +424,7 @@ async function Photos(dbObject, collectionName) {
             }
 
             // See if we have face data.
-            const faceDataRecord = await faceDataCollection.findFirst({ file })
+            const faceDataRecord = await faceDataCollection.findFirst({ fullname: file })
             if (faceDataRecord) {
                 // Found face data.
                 data.faceData = { ...faceDataRecord };
@@ -448,6 +448,14 @@ async function Photos(dbObject, collectionName) {
         return data;
     }
 
+    async function getFaceDataRecord(_id) {
+        return await faceDataCollection.findFirst({_id: new ObjectId(_id)});
+    }
+
+    async function updateFaceDataRecord(record) {
+        return await faceDataCollection.mUpdateOne({_id: record._id}, record);
+    }
+
     async function getPersonRecords(filter = {}) {
         return await peopleCollection.find({}).toArray();
     }
@@ -460,7 +468,6 @@ async function Photos(dbObject, collectionName) {
     }
 
     async function recognizeFacesInFile(fileData, personRecords) {
-        
         const faceDataRecord = fileData.faceData;
         const { faceData } = faceDataRecord;
         if (!Array.isArray(faceData) || !Array.isArray(personRecords)) {
@@ -470,21 +477,33 @@ async function Photos(dbObject, collectionName) {
         const result = [];
 
         for (let h = 0; h < faceData.length; h++) {
-            let resultThisFace;            
 
             for (let i = 0; i < personRecords.length; i++) {
                 const personRecord = personRecords[i];
-                const { faceDescriptors } = personRecord;
-    
-                if (!Array.isArray(faceDescriptors)) {
+                const referenceFaceDescriptorItems = personRecord.faceDescriptors;
+
+                if (!Array.isArray(personRecord.faceDescriptors)) {
+                    // Have no reference for this person.
                     continue;
                 }
-                for (let j = 0; j < faceDescriptors.length; j++) {
-                    log(`Face ${h}, person ${i}, reference ${j}`);
-                    const referenceFaceData = faceDescriptors[j];
-                    result.push(await recognizeFaces(faceData, referenceFaceData.data));
-                }
+                
+                const match = await recognizeFaces(faceData[h], personRecord);
+
+                if (match) {
+                    result.push(
+                        {                            
+                            testFaceIndex: h,
+                            ...match
+                        }
+                    );
+                }                
             }        
+        }
+
+        fileData.matchInfo = {
+            faceDataRecordId: faceDataRecord._id,
+            matches: [ ...result ],
+            result
         }
 
         return result;
@@ -579,6 +598,8 @@ async function Photos(dbObject, collectionName) {
         getRandomPicture,
         getCount,
         getDataForFileWithIndex,
+        getFaceDataRecord,
+        updateFaceDataRecord,
         getPersonRecords,
         getRecords,    
         getRecordWithIndex,

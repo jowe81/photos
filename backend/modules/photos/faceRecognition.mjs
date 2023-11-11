@@ -2,6 +2,7 @@ import * as faceapi from "@vladmandic/face-api";
 import * as canvas from "canvas";
 import * as tf from "@tensorflow/tfjs-node";
 import fs from "fs";
+import { match } from "assert";
 
 const { Canvas, Image, ImageData } = canvas;
 faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
@@ -39,32 +40,33 @@ async function getFaceFunctions() {
         return faces.map((face) => face.descriptor);
     }
 
-    async function recognizeFaces(faceData, referenceFaceData) {
+    async function recognizeFaces(faceDataItem, personRecord, distanceThreshold = .5) {
         /**
-         * Both arguments have this format:
-         * [
-         *    {
-         *      faceNumber:
-         *      descriptor:
-         *    }
-         * ]
+         * faceDataItem: {
+         *      detection...
+         *      data [ detection, ...],
+         * }
+         * 
          **/
-        return;
+        const referenceFaceDescriptorItems = personRecord.faceDescriptors;
 
-        const matchedFaces = [];
-
+        let match = null;
         // Go through all the faces found in the image.
-        for (const faceInfo of faceData) {
-            const { descriptor } = faceInfo.detection;
-
+        for (let i = 0; i < 1; i++) {
+            const testDescriptor = dbObjToFloatArray(faceDataItem.data.descriptor ?? faceDataItem.data.detection.descriptor);
+            
+            
             // Compare the detected face descriptor with each reference face descriptor
-            const distances = referenceFaceData.map((referenceFace) => {
-                const referenceFaceDescriptor = dbObjToFloatArray(referenceFace.detection.descriptor);
+            const distances = referenceFaceDescriptorItems.map((referenceFaceData, index) => {
+                const referenceFaceDataItem = referenceFaceData.data;
+                const referenceDescriptor = dbObjToFloatArray(referenceFaceDataItem.descriptor ?? referenceFaceDataItem.detection.descriptor);
+
                 return {
-                    name: referenceFace.faceId ?? referenceFace.faceNumber,
+                    testFaceDataIndex: referenceFaceData.index,
+                    referenceFaceDataIndex: index,
                     distance: faceapi.euclideanDistance(
-                        descriptor,
-                        referenceFaceDescriptor
+                        testDescriptor,
+                        referenceDescriptor
                     ),
                 };
             });
@@ -75,21 +77,19 @@ async function getFaceFunctions() {
             // The closest match is the one with the smallest distance
             const closestMatch = distances[0];
 
-            // You can set a threshold to determine if it's a valid match
-            // Adjust the threshold as needed
-            const threshold = 0.6;
+            if (closestMatch.distance <= distanceThreshold) {
 
-            if (closestMatch.distance <= threshold) {
-                console.log(Object.keys(closestMatch));
-                matchedFaces.push({
-                    descriptor,
-                    referenceName: closestMatch.name,
+                match = {
+                    personRecordId: personRecord._id,
+                    fullName: personRecord.fullName,
+                    referenceFaceDataIndex: closestMatch.referenceFaceDataIndex,
+                    distance: closestMatch.distance,                   
                     similarity: 1 - closestMatch.distance,
-                });
+                };
+                break;
             }
         }
-
-        return matchedFaces;
+        return match;        
     }
 
     function dbObjToFloatArray(obj) {
