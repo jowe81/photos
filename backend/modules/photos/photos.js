@@ -22,12 +22,10 @@ async function Photos(dbObject, collectionName) {
 
     const collectionNameFileInfo = `${collectionName}FileInfo`;
     const collectionNameFaceData = `${collectionName}FaceData`;
-    const collectionNameReference = `${collectionName}Reference`;
     const collectionNamePeople = `${collectionName}People`;
 
     const fileInfoCollection = getEnhancedCollection(db, collectionNameFileInfo);
     const faceDataCollection = getEnhancedCollection(db, collectionNameFaceData);
-    const referenceCollection = getEnhancedCollection(db, collectionNameReference);
     const peopleCollection = getEnhancedCollection(db, collectionNamePeople);
 
 
@@ -35,7 +33,7 @@ async function Photos(dbObject, collectionName) {
     const extensions = [".jpg", ".jpeg"];
 
     log(
-        `Initializing Photos module with fileInfoCollection names ${collectionName}, ${collectionNameFaceData}.`
+        `Initializing Photos module with collections ${collectionNameFileInfo}, ${collectionNameFaceData}, ${collectionNamePeople}.`
     );
     log(`Extensions for processing: ${extensions.join(", ")}`);
 
@@ -71,8 +69,7 @@ async function Photos(dbObject, collectionName) {
         );
 
         const filesInfo = await processFilesSequentially(
-            filesToProcess,
-            collectionName
+            filesToProcess,            
         );
 
         const fileInfoRecordsInserted = filesInfo.filter(
@@ -97,7 +94,7 @@ async function Photos(dbObject, collectionName) {
         return result;
     }
 
-    async function processFile(file, collectionName) {
+    async function processFile(file, detectFacesImmediately = false) {
         log(`-- Processing file: ${file}`);
 
         const existingData = await getDataForFile(file);
@@ -125,7 +122,7 @@ async function Photos(dbObject, collectionName) {
 
         let faceDataId = faceData?._id;
 
-        if (!faceDataId) {
+        if (!faceDataId && detectFacesImmediately) {
             // Add a faceData record.
             const faceDataRecord = await processFaces(file);
             if (faceDataRecord) {
@@ -164,10 +161,10 @@ async function Photos(dbObject, collectionName) {
     }
 
     // Asynchronous function to process all files sequentially
-    async function processFilesSequentially(filenames, collectionName) {
+    async function processFilesSequentially(filenames) {
         const filesInfo = [];
         for (const filename of filenames) {
-            filesInfo.push(await processFile(filename, collectionName));
+            filesInfo.push(await processFile(filename));
         }
 
         return filesInfo;
@@ -292,7 +289,7 @@ async function Photos(dbObject, collectionName) {
 
             try {
                 await faceDataCollection.insertOne(faceDataRecord, null);
-                log(`Added facedata record with id ${faceDataRecord._id}`);
+                log(`${faceDataRecord.faceData.length} faces found; added facedata record with id ${faceDataRecord._id}.`);
             } catch (err) {
                 // Couldn't insert.
             }
@@ -320,7 +317,6 @@ async function Photos(dbObject, collectionName) {
             console.log(err);
         }
 
-        log(`Got data for ${faceData.length} detected faces.`);
         return faceData;
     }
     
@@ -389,6 +385,9 @@ async function Photos(dbObject, collectionName) {
                     faceDataRecordId: new ObjectId(faceDataRecordId),
                     ...detectionOnFaceDataRecord,
                 }
+
+                // Do not store the personRecordId.
+                delete faceDescriptorObject.personRecordId;
 
                 personRecord.faceDescriptors.push(faceDescriptorObject);
                 await peopleCollection.mUpdateOne({_id: personRecord._id}, personRecord);
@@ -605,6 +604,7 @@ async function Photos(dbObject, collectionName) {
         getRecordWithIndex,
         storeReferenceFaceData,
         recognizeFacesInFile,
+        processFaces,
     };
 }
 
