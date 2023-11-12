@@ -90,7 +90,7 @@ mongoConnect().then(async ({db_mongo_database, db}) => {
 
             if (existingPersonRecordId) {
                 if (existingPersonRecordId !== recognizedPersonRecordId) {
-                    log(`Warning: Overwriting previously recognized person ${match.personRecordId} at faceDataItemIndex ${match.testFaceIndex}`, 'yellow');
+                    log(`Warning: Overwriting previously recognized person ${existingPersonRecordId} with ${recognizedPersonRecordId} at faceDataItemIndex ${match.testFaceIndex}`, 'yellow');
                 } else {
                     // Nothing to do - this person was already recognized.
                     continue;
