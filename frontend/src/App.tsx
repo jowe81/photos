@@ -15,7 +15,7 @@ function App() {
     const faceData = payload?.faceData;
     const personRecords = payload?.personRecords;
     const faceDataRecordId = payload?.faceData?._id;
-    const baseUrl = "http://192.168.1.199:3020/";
+    const baseUrl = "http://jj-photos.wnet.wn:3020/";
     if (fileInfo) {
         fileInfo.fullUrl = baseUrl + fileInfo.fullname;
     }

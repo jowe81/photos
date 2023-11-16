@@ -10,11 +10,18 @@ import { log } from './helpers/jUtils.js';
 const appName = process.env.APP_NAME ?? "JJ Project Backend";
 log(`Face recognition for ${appName} app starting.`);
 
+const args = process.argv.slice(2);
+
 mongoConnect().then(async ({db_mongo_database, db}) => {
     log(`Connected to database ${db_mongo_database}`);
 
     const photos = await Photos(db);
     
+    // Purge missing files
+    if (args.includes('--purge')) {
+        await photos.purgeMissingFiles();
+    }    
+
     // Get all people with their reference data.
     const personRecords = await photos.getPersonRecords();
 
@@ -24,7 +31,8 @@ mongoConnect().then(async ({db_mongo_database, db}) => {
     for (let i = 0; i < fileCount; i++) {
         // Collect the data (fileInfo and faceData records) for this file.
         const fileData = await photos.getDataForFileWithIndex(i);        
-        const filePath = fileData.fileInfo?.fullname;
+        const fileInfo = fileData.fileInfo;
+        const filePath = fileInfo?.fullname;
 
         if (!filePath) {
             log(`Error: Could not find record for file with index ${i}.`, 'red');
@@ -34,8 +42,13 @@ mongoConnect().then(async ({db_mongo_database, db}) => {
         let faceDataRecordId = fileData.faceData?._id?.toString();
 
         
-        log(`-- #${i} (${filePath}), fileInfo #${fileData.fileInfo._id}, faceData #${faceDataRecordId ? faceDataRecordId : `n/a`}. --`, 'green');
+        log(`-- #${i} (${filePath}), fileInfo #${fileInfo._id}, faceData #${faceDataRecordId ? faceDataRecordId : `n/a`}. --`, 'green');
         
+        if (fileInfo.missingAt) {
+            log(`Warning: ${filePath} not found; missing since ${fileInfo.missingAt.toLocaleString()}; skipping.`, 'yellow');
+            continue;
+        }
+
         if (!faceDataRecordId) {
             log(`No faceData for ${filePath}; running face detection.`, 'yellow');
             fileData.faceData = await photos.processFaces(filePath); 

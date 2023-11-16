@@ -400,11 +400,83 @@ async function Photos(dbObject, collectionName) {
 
             // Mark this on the faceDataRecord as a reference descriptor for this person.
             detectionOnFaceDataRecord.isReferenceDescriptor = true;
+            detectionOnFaceDataRecord.isManuallySet = true;
             detectionOnFaceDataRecord.personRecordId = personRecord._id;
             await faceDataCollection.mUpdateOne({_id: faceDataRecord._id}, faceDataRecord);        
 
             log(`Updated faceDataRecord ${faceDataRecord._id}, marking this descriptor as reference to ${fullName}.`);
         }        
+    }
+
+    /**
+     * Purge records for files that are no longer present.
+     */
+    async function purgeMissingFiles() {
+        let fileInfoRecords;
+
+        try {
+            fileInfoRecords = await fileInfoCollection.find({missingAt: { $exists: true }}).toArray();
+            log(`Purging records for ${fileInfoRecords.length} missing files.`);            
+        } catch (err) {
+            log(`Error: Encountered an error while attempting to purge records for missing files: ${err.message}. Aborting.`, 'red');
+            return;
+        }  
+
+        const missingCount = fileInfoRecords.length;
+
+        for (let i = 0; i < missingCount; i++) {
+            const fileInfoRecord = fileInfoRecords[i];
+            const faceDataRecordId = fileInfoRecord._faceDataId;
+            log(`-- Removing data for fileInfoRecord ${fileInfoRecord._id} --`);
+            if (faceDataRecordId) {
+                const filter = { _id: new ObjectId(faceDataRecordId) };
+                const faceDataRecord = await faceDataCollection.findFirst(filter);
+
+                if (faceDataRecord) {                    
+                    try {
+                        await faceDataCollection.deleteOne(filter);
+                        log(`Removed connected faceDataRecord ${faceDataRecordId}`);
+                        /**
+                         * Note: 
+                         *  Reference-descriptors in peopleCollection are not currently deleted when their source image is purged.
+                         *  This should probably be implemented.
+                         */
+                    } catch (err) {
+                        log(`Error: ${err.message} Could not remove faceDataRecord ${faceDataRecordId}.`);
+                    }                                        
+                }
+            }
+
+            await fileInfoCollection.deleteOne({_id: fileInfoRecord._id});
+            log(`Removed fileInfoRecord ${fileInfoRecord._id}`);
+        }
+
+    }
+    /**
+     * Check if the file described by the fileInfo record exists in the filesystem.
+     * Set fileInfo.missingAt  accordingly.
+     */
+    async function validateFile(fileInfo) {
+        if (typeof(fileInfo) !== 'object') {
+            return null;
+        }
+
+        const previouslyMissing = fileInfo.missingAt;
+        const currentlyMissing = !fs.existsSync(fileInfo.fullname);
+        
+        if (!previouslyMissing && currentlyMissing) {            
+            // It has newly gone missing.
+            fileInfo.missingAt = new Date();
+            await fileInfoCollection.mUpdateOne({_id: fileInfo._id}, fileInfo);
+        }
+        
+        if (previouslyMissing && !currentlyMissing) {
+            // It has newly been rediscovered.
+            delete fileInfo.missingAt;
+            await fileInfoCollection.mUpdateOne({_id: fileInfo._id}, fileInfo);
+        }
+
+        return fileInfo.missingAt;
     }
 
     /**
@@ -421,6 +493,8 @@ async function Photos(dbObject, collectionName) {
             if (records.length) {
                 data.fileInfo = records[0];
             }
+            
+            validateFile(data.fileInfo);
 
             // See if we have face data.
             const faceDataRecord = await faceDataCollection.findFirst({ fullname: file })
@@ -531,7 +605,10 @@ async function Photos(dbObject, collectionName) {
         let result;
         try {
             result = await fileInfoCollection
-                .aggregate([{ $sample: { size: 1 } }])
+                .aggregate([
+                    { $match: { missingAt: { $exists: false } } },
+                    { $sample: { size: 1 } }
+                ])
                 .toArray();
         } catch (err) {
             console.log(err);
@@ -540,14 +617,22 @@ async function Photos(dbObject, collectionName) {
         return result;
     }
 
-    async function getCount() {
+    async function getCount(filter) {        
+        let count = -1;
+
         try {
-            const count = await fileInfoCollection.countDocuments();
-            return count;
+            if (typeof filter === 'object') {
+                count = await fileInfoCollection
+                    .find(filter)
+                    .countDocuments();
+            } else {
+                count = await fileInfoCollection.countDocuments();
+            }
         } catch (err) {
             console.log(err);
-            return -1;
         }
+
+        return count;
     }
 
     async function getRecords() {
@@ -600,11 +685,12 @@ async function Photos(dbObject, collectionName) {
         getFaceDataRecord,
         updateFaceDataRecord,
         getPersonRecords,
-        getRecords,    
+        getRecords,
         getRecordWithIndex,
         storeReferenceFaceData,
         recognizeFacesInFile,
         processFaces,
+        purgeMissingFiles,
     };
 }
 

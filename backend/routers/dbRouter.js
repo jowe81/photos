@@ -15,8 +15,8 @@ const initRouter = (express, db, photos) => {
     next(err);
   });
 
-  dbRouter.use((req, res, next) => {    
-    log(`/post/dbRouter${req.url}`);
+  dbRouter.use((req, res, next) => {
+    log(`${req.ip} /post/dbRouter${req.url} (${req.headers['user-agent']})`);
     next();
   })
   
