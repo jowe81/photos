@@ -39,6 +39,9 @@ const initRouter = (express, db, photos) => {
                 ...doc,
                 url: constants.baseUrl + '/' + doc.fullname
             });
+        } else {
+            // There are no pictures in the db.
+            res.json({url: null});
         }
 
     } catch (err) {
