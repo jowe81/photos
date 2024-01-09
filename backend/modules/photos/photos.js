@@ -12,7 +12,7 @@ import { getEnhancedCollection } from "../../db/dbutils.js";
 import { getFaceFunctions } from "./faceRecognition.mjs";
 
 import { log } from "./../Log.js";
-import { Axios } from "axios";
+import axios from "axios";
 
 async function Photos(dbObject, collectionName) {
     const db = dbObject;
@@ -54,6 +54,22 @@ async function Photos(dbObject, collectionName) {
         log(`FaceApi loaded successfully.`);
     }
 
+    async function getCtrlFieldFromDynforms() {
+        let ctrlField;
+
+        try {
+            const data = await axios.get(`http://johannes-mb.wnet.wn:3010/db/_ctrlField`);
+            ctrlField = data.data?.__ctrl;
+            
+            log(`New control field: ${JSON.stringify(ctrlField)}`);
+        } catch (err){
+            log(`Unable to obtain control field from dynforms.`);
+            console.log(err)
+        }
+
+        return ctrlField;
+    }
+
     async function addDirectoryToDb(path) {
         const files = scanDirectory(path, extensions);
         const promises = [];
@@ -68,7 +84,7 @@ async function Photos(dbObject, collectionName) {
                 files.length - filesToProcess.length
             } invalid files.`
         );
-
+        
         const filesInfo = await processFilesSequentially(
             filesToProcess,            
         );
@@ -134,11 +150,17 @@ async function Photos(dbObject, collectionName) {
         }
 
         if (!fileInfo) {
+            const ctrlField = await getCtrlFieldFromDynforms();
             fileInfo = await new Promise(async (resolve) => {
-                let fileInfo = {};
+                let fileInfo;
 
                 fileInfo = getBasicMeta(file, fileInfo);
                 fileInfo = await getExifData(file, fileInfo);
+
+                // Add in the ctrl field
+                if (ctrlField) {
+                    fileInfo.__ctrl = { ...ctrlField };
+                }
 
                 // Add the link to face data if we have it.
                 if (faceDataId) {
@@ -588,11 +610,7 @@ async function Photos(dbObject, collectionName) {
         collectionName = constants.defaultCollectionName
     ) {        
         let result;
-        try {
-            // Add in the control field
-            const ctrlField = await Axios.get(`http://dynforms.wnet.wn:3010/db/_ctrlField`);            
-            fileInfo.__ctrl = { ...ctrlField };
-            
+        try {            
             result = await fileInfoCollection.insertOne(fileInfo, null, [
                 "fullname",
             ]);
