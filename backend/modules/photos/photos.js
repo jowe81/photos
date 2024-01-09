@@ -12,6 +12,7 @@ import { getEnhancedCollection } from "../../db/dbutils.js";
 import { getFaceFunctions } from "./faceRecognition.mjs";
 
 import { log } from "./../Log.js";
+import { Axios } from "axios";
 
 async function Photos(dbObject, collectionName) {
     const db = dbObject;
@@ -585,9 +586,13 @@ async function Photos(dbObject, collectionName) {
     async function addFileToDb(
         fileInfo,
         collectionName = constants.defaultCollectionName
-    ) {
+    ) {        
         let result;
         try {
+            // Add in the control field
+            const ctrlField = await Axios.get(`http://dynforms.wnet.wn:3010/db/_ctrlField`);            
+            fileInfo.__ctrl = { ...ctrlField };
+            
             result = await fileInfoCollection.insertOne(fileInfo, null, [
                 "fullname",
             ]);
