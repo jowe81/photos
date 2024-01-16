@@ -151,6 +151,7 @@ async function Photos(dbObject, collectionName) {
 
         if (!fileInfo) {
             const ctrlField = await getCtrlFieldFromDynforms();
+
             fileInfo = await new Promise(async (resolve) => {
                 let fileInfo;
 
@@ -213,6 +214,8 @@ async function Photos(dbObject, collectionName) {
         const { extension, filename, dirname } = parsePath(file);
         const { size, uid, gid } = fs.statSync(file);
 
+        const { tags, date } = getTagsAndDateFromFilePath(file);
+
         fileInfo = {
             ...{
                 fullname: file,
@@ -222,12 +225,66 @@ async function Photos(dbObject, collectionName) {
                 size,
                 uid,
                 gid,
+                tags,
+                date,
+
             },
         };
 
         log(`Got basic meta for ${file}`);
-
         return fileInfo;
+    }
+
+    function getTagsAndDateFromFilePath(file) {
+        // (?=[\d- ]{6}) positive lookahead to ensure there are at least 6 characters in the match.
+        // This will grab the directory name that has the date.
+        let match, dateStr, keywordsStr;
+
+        const dirnamePattern = /(?=[\d- ]{6})(\d+[- ]?\d+[- ]?\d+)([^\/]*)/g;
+        if (match = dirnamePattern.exec(file)) {            
+            dateStr = match[1];
+            keywordsStr = match[2];
+        }
+
+        const date = dateStr ? new Date(dateStr) : null;
+        const tags = filterTags(keywordsStr ? keywordsStr.trim().split(' ') : []);
+        
+        return {
+            tags,
+            date: isNaN(date) ? null : date
+        }
+
+    }
+
+    /**
+     * Remove some tags
+     */
+    function filterTags(tags) {
+        if (!(tags && tags.length)) {
+            return [];
+        }
+
+        const excludeTags = [
+            'and',
+            'at',
+            'edits',
+            'edit',
+            'for',
+            'from',
+            'in',
+            'on',
+            'the',
+            'to',
+            'with',
+        ]
+
+        return tags
+            .map((tag) => tag.toLowerCase())
+            .filter((tag) => {
+                const isAlpha = /^[a-zA-Z]+$/.test(tag);
+                return !excludeTags.includes(tag) && isAlpha;
+            });
+            
     }
 
     function getExifData(file = "", fileInfo = {}) {
@@ -262,7 +319,7 @@ async function Photos(dbObject, collectionName) {
                     const exifData = {
                         width: fileInfo.width ?? tags["Image Width"]?.value,
                         height: fileInfo.height ?? tags["Image Height"]?.value,
-                        dateTime: convertDateTime(
+                        exifDate: convertDateTime(
                             tags["DateTimeOriginal"]?.value[0] ??
                                 tags["DateTimeDigitized"]?.value[0] ??
                                 ""
@@ -273,6 +330,14 @@ async function Photos(dbObject, collectionName) {
                         },
                         orientation: tags["Orientation"]?.value,
                     };
+
+                    if (exifData.exifDate) {
+                        const exifDateObj = new Date(exifData.exifDate);
+                        if (!isNaN(exifDateObj)) {
+                            // Since we have an exif date, override the date that may have been derived from the file path.
+                            fileInfo.date = exifDateObj;
+                        }
+                    }
 
                     if (exifData.width && exifData.height) {
                         fileInfo.aspect = exifData.width / exifData.height;
