@@ -1,3 +1,5 @@
+import fs from 'fs';
+import sharp from 'sharp';
 import { log } from '../helpers/jUtils.js';
 import { ObjectId } from 'mongodb';
 import constants from '../constants.js';
@@ -64,32 +66,80 @@ const initRouter = (express, db, photos) => {
     }
   });  
 
+  dbRouter.get('/photoRecord', async (req, res) => {
+    if (req.query.index) {
+        let index = req.query.index ?? 0;
+
+        try {
+            const count = await photos.getCount();
+
+            if (index < 0) {
+                index = 0;
+            } else if (index >= count) {
+                index = count - 1;
+            }
+
+            if (index > -1) {
+                const fileData = await photos.getDataForFileWithIndex(index);
+
+                const data = {
+                    ...fileData,
+                    count,
+                    index,
+                };
+
+                res.json({ success: true, data });
+            }
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }        
+    } else if (req.query._id) {
+        
+        let _id = req.query._id;
+
+        try {
+            const record = await photos.getRecordWithId(_id);
+            res.json({ success: true, record });
+        } catch (err) {
+            res.status(404).json({ success: false, error: 'Image not found.'});
+            log(`Did not find image with id: "${_id}".`);
+        }
+    }
+
+  });
+
+  // Serve an actual file
   dbRouter.get('/photo', async (req, res) => {
-    let index = req.query.index ?? 0;
+    const { _id } = req.query;
 
     try {
-      const count = await photos.getCount();
+        const record = await photos.getRecordWithId(_id);
+        const imagePath = record.fullname;
 
-      if (index < 0) {
-        index = 0;
-      } else if (index >= count) {
-        index = count - 1;
-      }
+        if (!fs.existsSync(imagePath)) {
+            return res.status(404).json({ success: false, error: "Image not found." });
+        }
 
-      if (index > -1) {
-        const fileData = await photos.getDataForFileWithIndex(index);                        
+        let rotateBy = 0;
+        if (record.orientation) {
+            rotateBy = (parseInt(record.orientation) - 1) * 90;
+        }
 
-        const data = {
-          ...fileData,
-          count,
-          index,
-        }  
-
-        res.json({success: true, data});
-      }
-
-    } catch(err) {
-      res.status(500).json({success: false, error: err.message});
+        sharp(imagePath)
+            .resize({ width: 1920 })
+            .rotate(rotateBy)
+            .toBuffer()
+            .then((data) => {
+                res.contentType("image/jpeg");
+                res.send(data);
+            })
+            .catch((error) => {
+                console.error("Error processing image:", error);
+                res.status(500).json({ success: false, error: "Internal Server Error." });
+            });        
+    } catch(err) {            
+        res.status(404).json({ success: false, error: "Image not found." });
+        log(`Did not find image with id: "${_id}".`);
     }        
   });
 

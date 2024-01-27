@@ -3,7 +3,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Project files
-import mongoConnect from './db/mongodb.js';
+import { clientContainer } from "./db/mongodb.js";
+const mongoConnect = clientContainer.mongoConnect;
 import dbRouter from './routers/dbRouter.js';
 import Photos from './modules/photos/photos.js';
 import { log } from './helpers/jUtils.js';

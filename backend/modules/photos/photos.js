@@ -723,14 +723,18 @@ async function Photos(dbObject, collectionName) {
         return count;
     }
 
-    async function getRecords() {
+    async function getRecords(filter = {}) {
         try {
-            const records = await fileInfoCollection.find({}).toArray();
-            return records;
+            return await fileInfoCollection.find(filter).toArray();
         } catch (err) {
             console.log(err);
             return [];
         }
+    }
+
+    async function getRecordWithId(_id) {
+        const records = await getRecords({ _id: new ObjectId(_id) });
+        return records.length ? records[0] : null;        
     }
 
     async function getRecordWithIndex(index = 0) {
@@ -774,6 +778,7 @@ async function Photos(dbObject, collectionName) {
         updateFaceDataRecord,
         getPersonRecords,
         getRecords,
+        getRecordWithId,
         getRecordWithIndex,
         storeReferenceFaceData,
         recognizeFacesInFile,
