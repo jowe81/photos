@@ -168,6 +168,9 @@ async function Photos(dbObject, collectionName) {
                     fileInfo._faceDataId = faceDataId;
                 }
 
+                fileInfo.rating = 0;
+                fileInfo.collections = [];
+
                 // Add the main fileInfo record.
                 const insertResult = await addFileToDb(
                     fileInfo,
@@ -246,13 +249,28 @@ async function Photos(dbObject, collectionName) {
             keywordsStr = match[2];
         }
 
-        const date = dateStr ? new Date(dateStr) : null;
-        const tags = filterTags(keywordsStr ? keywordsStr.trim().split(' ') : []);
-        
-        return {
-            tags,
-            date: isNaN(date) ? null : date
+        if (keywordsStr) {
+            keywordsStr = keywordsStr.trim();
         }
+
+        const date = dateStr ? new Date(dateStr) : null;
+        let tags = keywordsStr ? keywordsStr.split(' ') : [];
+        
+        if (tags.length === 1) {
+            // Only one word; see if there's multiple without spaces (i.e. catch something like: SnowInVancouver)
+            if (/^[a-zA-Z0-9]+$/.test(keywordsStr)) {
+                // Alphanumeric only            
+                const words = keywordsStr.split(/(?=[A-Z])/);
+                if (words.length > 1) {
+                    tags = words;
+                }
+            }
+        }
+
+        return {
+            tags: filterTags(tags),
+            date: isNaN(date) ? null : date,
+        };
 
     }
 
@@ -769,6 +787,111 @@ async function Photos(dbObject, collectionName) {
         }
     }
 
+    async function getLibraryInfo() {
+        const libraryInfo = {};
+
+        libraryInfo.collections = await getCollectionCounts();
+        addDefaultCollectionsInfoToLibraryInfo(libraryInfo);
+
+        libraryInfo.library = {};
+        libraryInfo.library.count = await getTotalDocumentCount();
+        libraryInfo.library.tags = await getTags();
+
+        return libraryInfo;
+    }
+
+    function addDefaultCollectionsInfoToLibraryInfo(libraryInfo) {
+        const defaultCollectionNames = ["favorites", "trashed", "unsorted"];
+
+        defaultCollectionNames.forEach((collectionName) => {
+            const existingInfo = libraryInfo.collections.filter(
+                (collectionInfo) => collectionInfo.collectionName === collectionName
+            );
+            if (!existingInfo.length) {
+                libraryInfo.collections.push({ collectionName, count: 0 });
+            }
+        });
+    }
+
+    async function getTags() {
+        try {
+            const tagsInfo = await fileInfoCollection
+                .aggregate([
+                    { $unwind: "$tags" },
+                    { $group: { _id: "$tags" } },
+                    { $project: { tags: 0 } },
+                ])
+                .toArray();
+
+            return tagsInfo.map((info) => info._id).sort();
+        } catch (err) {
+            log(`Could not retrieve tags: ${err.message}`, null, "red");
+            return [];
+        }
+    }
+
+    async function getTotalDocumentCount() {
+        try {
+            return await fileInfoCollection.countDocuments({});
+        } catch (err) {
+            log(`Could not get a document count for the entire library: ${err.message}`, null, "red");
+            return {};
+        }
+    }
+
+    async function getCollectionCounts() {
+        try {
+            const collectionNames = await getCollectionNames();
+
+            const promises = collectionNames.map(async (collectionName) => {
+                return fileInfoCollection.countDocuments({
+                    collections: { $in: [collectionName] },
+                });
+            });
+
+            const counts = await Promise.all(promises);
+
+            const collectionCounts = collectionNames.map((collectionName, index) => {
+                return { 
+                    collectionName,
+                    count: counts[index] 
+                }
+            });
+
+            // Get a count for unsorted pictures, i.e. those in no collection at all.
+            const unsortedCount = await fileInfoCollection.countDocuments({
+                collections: { $eq: [] }
+            })
+
+            collectionCounts.push({
+                collectionName: "unsorted",
+                count: unsortedCount,
+            });
+
+            return collectionCounts;
+        } catch (err) {
+            log(`Could not retrieve collection counts: ${err.message}`, null, 'red');
+            return {}
+        }
+    }
+
+    async function getCollectionNames() {
+        try {
+            const collectionNamesInfo = await fileInfoCollection
+                .aggregate([
+                    { $unwind: "$collections" },
+                    { $group: { _id: "$collections" } },
+                    { $project: { collections: 0 } },
+                ])
+                .toArray();
+
+            return collectionNamesInfo.map((info) => info._id);
+        } catch (err) {
+            log(`Could not retrieve collection names: ${err.message}`, null, 'red');
+            return [];
+        }
+    }
+
     return {
         addDirectoryToDb,
         getRandomPicture,
@@ -784,6 +907,8 @@ async function Photos(dbObject, collectionName) {
         recognizeFacesInFile,
         processFaces,
         purgeMissingFiles,
+
+        getLibraryInfo,
     };
 }
 
