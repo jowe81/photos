@@ -24,6 +24,23 @@ async function processDynformsPullRequest({ connectionName, collectionName, sess
 }
 
 async function processDynformsPushRequest({ connectionName, collectionName, record }) {
+    if (record?.collections) {
+        console.log('Update Sanities')
+        // Sanity
+        if (record.collections.includes('trashed')) {
+            record.collections = ['trashed'];
+        }
+
+        // It's being updated but not deleted; make sure it's in general.
+        if (record.collections[0] !== 'trashed') {
+            if (!record.collections.includes('general')) {
+                record.collections.push("general");
+            }
+        }
+
+        
+    }
+
     try {
         const dynformsResponse = await axios.post(`${dynformsBaseUrl}/db/m2m/push`, {
             connectionName,

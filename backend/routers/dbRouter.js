@@ -7,7 +7,10 @@ import { processDynformsPullRequest, processDynformsPushRequest } from "../modul
 
 const initRouter = (express, db, photos) => {
     const castId = (obj) => (obj._id = obj._id ? new ObjectId(obj._id) : null);
-    const logError = (err) => log(`Error: ${err.message}`);
+    const logError = (err) => { 
+        log(`Error: ${err.message}`);
+        console.log(err);
+    };
 
     const dbRouter = express.Router();
 
@@ -174,15 +177,30 @@ const initRouter = (express, db, photos) => {
         );
 
         const dynformsResponse = await processDynformsPullRequest({...req.body});        
+
+        if (!dynformsResponse) {
+            log(`Dynforms responded unexpectedly. Unable to fulfil the request.`);
+            res.json({success: false, data: null});
+            return;
+        }
+
         const libraryInfo = await photos.getLibraryInfo();
+        libraryInfo.filterSize = await photos.getFilterSize(filter);
+
         const response = {
             ...dynformsResponse,
             libraryInfo,
         }
-
+        
         if (dynformsResponse.data?.records) {
             const recordCount = dynformsResponse.data.records.length;
             log(`Forwarding ${recordCount} record${recordCount !== 1 ? "s" : ""} with library info: ${JSON.stringify(libraryInfo)}`);
+            log(`Last Used Filter: ${JSON.stringify(response.filter)}`);
+            const record = dynformsResponse.data.records[0];
+            response.recordInfo = {
+                recordId: record?._id,
+                availableTags: libraryInfo.library?.tags?.filter((tag) => !record?.tags?.includes(tag)),
+            };
         } else {
             log(`Returning error: ${dynformsResponse.error}`);
         }
@@ -194,20 +212,24 @@ const initRouter = (express, db, photos) => {
         try {
             const dynformsResponse = await processDynformsPushRequest({ ...req.body });
             const libraryInfo = await photos.getLibraryInfo();
-            const response = {
-                ...dynformsResponse,
+            libraryInfo.filterSize = await photos.getFilterSize(req.body.filter);
+
+            let response = {
                 libraryInfo,
+                ...dynformsResponse
             };
 
-            if (dynformsResponse.data?.records) {
+            if (dynformsResponse?.data?.records) {
                 const recordCount = dynformsResponse.data.records.length;
-                log(
-                    `Forwarding ${recordCount} record${recordCount !== 1 ? "s" : ""} with library info: ${JSON.stringify(
-                        libraryInfo
-                    )}`
-                );
+                log(`Forwarding ${recordCount} dynforms record${recordCount !== 1 ? "s" : ""}`);
+                log(`Last Used Filter: ${JSON.stringify(response.filter)}`);                
+                const record = dynformsResponse.data.records[0];
+                response.recordInfo = {
+                    recordId: record._id,
+                    availableTags: libraryInfo.library?.tags?.filter(tag => !record?.tags?.includes(tag))
+                }                
             } else {
-                log(`Returning error: ${dynformsResponse.error}`);
+                log(`Returning error. ${dynformsResponse?.error ? dynformsResponse.error : `(Unknown error; DynForms response didn't come back as expected.)`}`);
             }
 
             res.json(response);

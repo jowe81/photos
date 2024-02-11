@@ -3,7 +3,7 @@ import chalk from "chalk";
 import fs from "fs";
 import ExifParser from "exif-parser";
 import ExifReader from "exifreader";
-
+import { performance } from 'perf_hooks';
 import { ObjectId } from "mongodb";
 
 import { scanDirectory } from "../scanner.js";
@@ -169,7 +169,7 @@ async function Photos(dbObject, collectionName) {
                 }
 
                 fileInfo.rating = 0;
-                fileInfo.collections = [];
+                fileInfo.collections = ['unsorted'];
 
                 // Add the main fileInfo record.
                 const insertResult = await addFileToDb(
@@ -290,6 +290,7 @@ async function Photos(dbObject, collectionName) {
             'for',
             'from',
             'in',
+            'of',
             'on',
             'the',
             'to',
@@ -787,16 +788,30 @@ async function Photos(dbObject, collectionName) {
         }
     }
 
+    async function getFilterSize(filter) {
+        const filterSize = await fileInfoCollection.countDocuments(filter);
+        return filterSize;
+    }
+
     async function getLibraryInfo() {
+        const startTime = performance.now();
         const libraryInfo = {};
 
         libraryInfo.collections = await getCollectionCounts();
         addDefaultCollectionsInfoToLibraryInfo(libraryInfo);
 
-        libraryInfo.library = {};
-        libraryInfo.library.count = await getTotalDocumentCount();
-        libraryInfo.library.tags = await getTags();
+        libraryInfo.photosCount = await getTotalDocumentCount();
+        libraryInfo.folders = await getArrayItemsWithCounts('dirname')
 
+        addLabelsToFoldersInfo(libraryInfo.folders);
+        libraryInfo.folders.sort((a, b) => a.label > b.label ? -1 : 1);
+
+        libraryInfo.tags = await getArrayItemsWithCounts('tags');
+
+
+        const endTime = performance.now();
+        libraryInfo.calculcationTime = endTime - startTime;
+                
         return libraryInfo;
     }
 
@@ -805,12 +820,58 @@ async function Photos(dbObject, collectionName) {
 
         defaultCollectionNames.forEach((collectionName) => {
             const existingInfo = libraryInfo.collections.filter(
-                (collectionInfo) => collectionInfo.collectionName === collectionName
+                (collectionInfo) => collectionInfo.item === collectionName
             );
             if (!existingInfo.length) {
-                libraryInfo.collections.push({ collectionName, count: 0 });
+                libraryInfo.collections.push({ item: collectionName, count: 0 });
             }
         });
+    }
+
+    function addLabelsToFoldersInfo(foldersInfo) {
+        foldersInfo?.forEach((folderInfo) => {            
+            const baseDisplay = trimHiddenPartFromFolderPath(folderInfo.item);
+            const parts = baseDisplay?.split('/');
+
+            // Try to find the main folder name. It should have a date of some sort.
+            let mainName;
+
+            parts.every((part, index) => {
+                if (/^\d{2,}[^A-Za-z]+[A-Za-z]+/.test(part)) {
+                    mainName = part;
+                    return false;
+                }
+
+                return true;
+            })
+            
+            folderInfo.label = mainName ?? baseDisplay;
+        })
+    }
+
+    function trimHiddenPartFromFolderPath(fullPath) {
+        const envVar = process.env.PATH_PARTS_TO_HIDE_IN_FOLDER_LABELS ?? '';
+        const partsToHide = envVar.split(',');
+
+        if (!partsToHide) {
+            return fullPath;
+        }
+
+        let trimmed = fullPath;
+
+        // Order by longest first to avoid unexpected results
+        partsToHide
+            .sort((a, b) => a?.length > b?.length ? -1 : 1)
+            .every(part => {
+                if (fullPath.substring(0, part.length)) {
+                    trimmed = fullPath.substring(part.length);
+                    return false;
+                }
+                return true;
+            })
+
+
+        return trimmed;
     }
 
     async function getTags() {
@@ -839,10 +900,54 @@ async function Photos(dbObject, collectionName) {
         }
     }
 
+    async function getArrayItemsWithCounts(propertyName) {
+        try {
+            const items = await collectItemsFromArrays(propertyName);
+
+            const promises = items.map(async (item) => {
+                return fileInfoCollection.countDocuments({
+                    [propertyName]: { $in: [item] },
+                });
+            });
+
+            const counts = await Promise.all(promises);
+
+            const itemsCounts = items.map((item, index) => {
+                return { 
+                    item,
+                    count: counts[index] 
+                }
+            });
+
+            return itemsCounts;
+        } catch (err) {
+            log(`Could not retrieve ${propertyName} counts: ${err.message}`, null, 'red');
+            return {}
+        }
+    }
+
+    async function collectItemsFromArrays(propertyName) {
+        try {
+            const propertyInfo = await fileInfoCollection
+                .aggregate([
+                    { $unwind: `$${propertyName}` },
+                    { $group: { _id: `$${propertyName}` } },
+                    { $project: { propertyName: 0 } },
+                ])
+                .toArray();
+
+            return propertyInfo.map((info) => info._id).sort();
+        } catch (err) {
+            log(`Could not retrieve ${propertyName}: ${err.message}`, null, "red");
+            return [];
+        }
+    }
+
+
     async function getCollectionCounts() {
         try {
             const collectionNames = await getCollectionNames();
-
+            
             const promises = collectionNames.map(async (collectionName) => {
                 return fileInfoCollection.countDocuments({
                     collections: { $in: [collectionName] },
@@ -853,7 +958,7 @@ async function Photos(dbObject, collectionName) {
 
             const collectionCounts = collectionNames.map((collectionName, index) => {
                 return { 
-                    collectionName,
+                    item: collectionName,
                     count: counts[index] 
                 }
             });
@@ -864,7 +969,7 @@ async function Photos(dbObject, collectionName) {
             })
 
             collectionCounts.push({
-                collectionName: "unsorted",
+                item: "unsorted",
                 count: unsortedCount,
             });
 
@@ -897,8 +1002,9 @@ async function Photos(dbObject, collectionName) {
         getRandomPicture,
         getCount,
         getDataForFileWithIndex,
-        getFaceDataRecord,
+        getFaceDataRecord,        
         updateFaceDataRecord,
+        getFilterSize,
         getPersonRecords,
         getRecords,
         getRecordWithId,
