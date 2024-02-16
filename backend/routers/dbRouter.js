@@ -7,6 +7,33 @@ import { processDynformsPullRequest, processDynformsPushRequest } from "../modul
 
 const initRouter = (express, db, photos) => {
     const castId = (obj) => (obj._id = obj._id ? new ObjectId(obj._id) : null);
+
+    const cache = {
+        collectionsLastAddedTo: [],
+        lastPulledRecord: null,
+        lastPushedRecord: null,
+    };
+
+    function updateCollectionsLastAddedTo(record) {            
+        const oldCollections = cache.lastPulledRecord?.collections;
+        const newCollections = record?.collections;
+        let collectionsLastAddedTo = cache.collectionsLastAddedTo;
+
+        newCollections?.forEach((newCollectionName) => {
+            if (['general', 'trashed'].includes(newCollectionName)) {
+                return;
+            }
+
+            if (!oldCollections || !oldCollections.includes(newCollectionName)) {
+                // This one wasn't on the record previously, it got added.
+                // Remove it from the list if it's in there, then put it to the front.
+                collectionsLastAddedTo = collectionsLastAddedTo.filter(collectionName => collectionName !== newCollectionName)
+                collectionsLastAddedTo.unshift(newCollectionName);
+                cache.collectionsLastAddedTo = [...collectionsLastAddedTo];
+            }
+        })
+    }
+
     const logError = (err) => { 
         log(`Error: ${err.message}`);
         console.log(err);
@@ -190,6 +217,7 @@ const initRouter = (express, db, photos) => {
         const response = {
             ...dynformsResponse,
             libraryInfo,
+            latestOps: {},
         }
         
         if (dynformsResponse.data?.records) {
@@ -201,6 +229,9 @@ const initRouter = (express, db, photos) => {
                 recordId: record?._id,
                 availableTags: libraryInfo.library?.tags?.filter((tag) => !record?.tags?.includes(tag)),
             };
+
+            response.latestOps.collectionsLastAddedTo = [...cache.collectionsLastAddedTo];        
+            cache.lastPulledRecord = {...record};
         } else {
             log(`Returning error: ${dynformsResponse.error}`);
         }
@@ -216,6 +247,7 @@ const initRouter = (express, db, photos) => {
 
             let response = {
                 libraryInfo,
+                latestOps: {},
                 ...dynformsResponse
             };
 
@@ -223,11 +255,17 @@ const initRouter = (express, db, photos) => {
                 const recordCount = dynformsResponse.data.records.length;
                 log(`Forwarding ${recordCount} dynforms record${recordCount !== 1 ? "s" : ""}`);
                 log(`Last Used Filter: ${JSON.stringify(response.filter)}`);                
-                const record = dynformsResponse.data.records[0];
+                const record = dynformsResponse.data.records[0];                
+                
+                updateCollectionsLastAddedTo(record);
+                cache.lastPulledRecord = { ...record };
+                response.latestOps.collectionsLastAddedTo = [...cache.collectionsLastAddedTo];
+
                 response.recordInfo = {
                     recordId: record._id,
                     availableTags: libraryInfo.library?.tags?.filter(tag => !record?.tags?.includes(tag))
                 }                
+
             } else {
                 log(`Returning error. ${dynformsResponse?.error ? dynformsResponse.error : `(Unknown error; DynForms response didn't come back as expected.)`}`);
             }
@@ -242,5 +280,7 @@ const initRouter = (express, db, photos) => {
 
     return dbRouter;
 };
+
+
 
 export default initRouter;
