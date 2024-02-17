@@ -25,7 +25,6 @@ async function processDynformsPullRequest({ connectionName, collectionName, sess
 
 async function processDynformsPushRequest({ connectionName, collectionName, record }) {
     if (record?.collections) {
-        console.log('Update Sanities')
         // Sanity
         if (record.collections.includes('trashed')) {
             record.collections = ['trashed'];

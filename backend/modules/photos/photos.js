@@ -1,3 +1,4 @@
+import _ from "lodash";
 import constants from "../../constants.js";
 import chalk from "chalk";
 import fs from "fs";
@@ -24,12 +25,14 @@ async function Photos(dbObject, collectionName) {
     const collectionNameFileInfo = `${collectionName}FileInfo`;
     const collectionNameFaceData = `${collectionName}FaceData`;
     const collectionNamePeople = `${collectionName}People`;
+    const collectionNameDbMeta = `${collectionName}DbMeta`;
+    const collectionNameDbMetaItems = `${collectionName}DbMetaItems`;
 
     const fileInfoCollection = getEnhancedCollection(db, collectionNameFileInfo);
     const faceDataCollection = getEnhancedCollection(db, collectionNameFaceData);
     const peopleCollection = getEnhancedCollection(db, collectionNamePeople);
-
-
+    const metaCollection = getEnhancedCollection(db, collectionNameDbMeta);
+    const metaItemsCollection = getEnhancedCollection(db, collectionNameDbMetaItems);
 
     const extensions = [".jpg", ".jpeg"];
 
@@ -179,12 +182,81 @@ async function Photos(dbObject, collectionName) {
                 if (insertResult) {
                     ops.fileInfo = "insert";
                 }
+
+                // Process collections and tags
+                await syncCollectionsForFileInfoRecord(fileInfo);
+
                 resolve(fileInfo);
             });
         }
 
         log(`Done with: ${file}`);
         return { ops, fileInfo, faceData };
+    }
+
+    async function syncCollectionsForFileInfoRecord(newRecord, prevRecord) {
+        const collectionsNew = newRecord.collections ? [...newRecord.collections] : [];
+        const collectionsNewStringified = JSON.stringify(collectionsNew); // Bizarre: using an plain array here results in the array being mutated in the loop below.
+
+        // Need to merge the collections from both before and after in order to both add and remove as needed.
+        const collectionsToProcess = collectionsNew;
+        const collectionsPrev = prevRecord?.collections ? [...prevRecord.collections] : [];
+        collectionsPrev.forEach(collectionName => !collectionsToProcess.includes(collectionName) && collectionsToProcess.push(collectionName));
+
+        const promises = collectionsToProcess.map(async (collectionName) => {
+            // Should the pic be in the collection?
+            const pictureShouldBeInCollection = JSON.parse(collectionsNewStringified).includes(collectionName);
+
+            /**
+             * See if this collection exists.
+             * If not, create the collection.
+             *
+             * See if the picture should be in it, then add/remove this picture.
+             */
+
+            const collectionRecord = await metaCollection.findOne({ name: collectionName });
+            let collectionId = collectionRecord?._id;
+
+            if (!collectionId) {
+                // Create collection record.
+                const result = await metaCollection.insertOne({
+                    type: "collection",
+                    name: collectionName,
+                });
+
+                collectionId = result.insertedId;
+            }
+
+            if (!collectionId) {
+                log(`Something went wrong.`, null, "bgRed");
+            }
+            // Now check if the picture is in the collection already
+            let collectionItem = await metaItemsCollection.findOne({ collectionId, fileInfoId: newRecord._id });
+            const pictureIsCurrentlyInCollection = !!collectionItem;
+
+            if (pictureShouldBeInCollection) {
+                if (!pictureIsCurrentlyInCollection) {
+                    log(`Added collection '${collectionName}': Picture is not yet in collection, adding it.`, null, "yellow");
+
+                    const result = await metaItemsCollection.insertOne({
+                        fileInfoId: newRecord._id,
+                        collectionId,
+                        collectionName, // Don't need to store this, just to make dev easier
+                    });
+                } else {
+                    log(`Added collection '${collectionName}': Picture is already in collection.`, null, "green");
+                }
+            } else {
+                if (pictureIsCurrentlyInCollection) {
+                    const result = await metaItemsCollection.deleteOne({_id: collectionItem._id});
+                    log(`Removed collection '${collectionName}': Picture is currently in collection, removing it.`, null, "yellow");
+                } else {
+                    log(`Removed collection '${collectionName}': Picture is not in collection.`, null, "green");
+                }                
+            }
+        });
+
+        const data = await Promise.all(promises);
     }
 
     // Asynchronous function to process all files sequentially
@@ -1012,6 +1084,7 @@ async function Photos(dbObject, collectionName) {
         storeReferenceFaceData,
         recognizeFacesInFile,
         processFaces,
+        syncCollectionsForFileInfoRecord,
         purgeMissingFiles,
 
         getLibraryInfo,

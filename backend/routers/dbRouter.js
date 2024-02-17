@@ -1,5 +1,6 @@
 import fs from "fs";
 import sharp from "sharp";
+import _ from "lodash";
 import { log } from "../helpers/jUtils.js";
 import { ObjectId } from "mongodb";
 import constants from "../constants.js";
@@ -258,13 +259,17 @@ const initRouter = (express, db, photos) => {
                 const record = dynformsResponse.data.records[0];                
                 
                 updateCollectionsLastAddedTo(record);
+                const prevRecord = _.cloneDeep(cache.lastPulledRecord);
                 cache.lastPulledRecord = { ...record };
-                response.latestOps.collectionsLastAddedTo = [...cache.collectionsLastAddedTo];
 
+                response.latestOps.collectionsLastAddedTo = [...cache.collectionsLastAddedTo];
+                
                 response.recordInfo = {
                     recordId: record._id,
                     availableTags: libraryInfo.library?.tags?.filter(tag => !record?.tags?.includes(tag))
                 }                
+
+                await photos.syncCollectionsForFileInfoRecord(record, prevRecord);
 
             } else {
                 log(`Returning error. ${dynformsResponse?.error ? dynformsResponse.error : `(Unknown error; DynForms response didn't come back as expected.)`}`);
