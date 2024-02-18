@@ -4,7 +4,7 @@ import _ from "lodash";
 import { log } from "../helpers/jUtils.js";
 import { ObjectId } from "mongodb";
 import constants from "../constants.js";
-import { processDynformsPullRequest, processDynformsPushRequest } from "../modules/dynforms.js";
+import { processDynformsPullRequest, processDynformsPushRequest, processFilterObject } from "../modules/dynforms.js";
 
 const initRouter = (express, db, photos) => {
     const castId = (obj) => (obj._id = obj._id ? new ObjectId(obj._id) : null);
@@ -153,7 +153,7 @@ const initRouter = (express, db, photos) => {
             }
 
             sharp(imagePath)
-                .resize({ width: 1920 })
+                .resize({ width: 2400 })
                 .rotate(rotateBy)
                 .toBuffer()
                 .then((data) => {
@@ -184,6 +184,7 @@ const initRouter = (express, db, photos) => {
         let {
             connectionName, // Optional target database (use default if undefined)
             collectionName, // Target collection
+            cursorIndexOffset, // Navigate
             sessionId, // Optional session identifier
             filter, // Optional Mongo query filter
             orderBy, // Optional sort filter
@@ -204,72 +205,73 @@ const initRouter = (express, db, photos) => {
             )}, filter: ${JSON.stringify(filter)}, orderBy: ${JSON.stringify(orderBy)}.`
         );
 
-        const dynformsResponse = await processDynformsPullRequest({...req.body});        
-
-        if (!dynformsResponse) {
-            log(`Dynforms responded unexpectedly. Unable to fulfil the request.`);
-            res.json({success: false, data: null});
-            return;
-        }
-
         const libraryInfo = await photos.getLibraryInfo();
         libraryInfo.filterSize = await photos.getFilterSize(filter);
+        const fileInfoRecord = await photos.getRequestedFileInfoRecord(filter, orderBy, cursorIndexOffset);
+        let response = {};
+        
 
-        const response = {
-            ...dynformsResponse,
+        response = {
+            data: {
+                records: [
+                    fileInfoRecord,
+                ]
+            },
             libraryInfo,
-            latestOps: {},
+            latestOps: {
+                collectionsLastAddedTo: [...cache.collectionsLastAddedTo]
+            },
+            recordInfo: {
+                recordId: fileInfoRecord?._id,
+                availableTags: libraryInfo.library?.tags?.filter((tag) => !fileInfoRecord?.tags?.includes(tag)),
+            },
+        };
+
+        if (fileInfoRecord) {
+            cache.lastPulledRecord = { ...fileInfoRecord };      
+            log(`Passing back fileInfoRecord ${fileInfoRecord._id} with library info calulated in ${libraryInfo.calculationTime} ms`);
+      
+        } else {
+            log(`Returning error: unable to pull requested image`);
         }
         
-        if (dynformsResponse.data?.records) {
-            const recordCount = dynformsResponse.data.records.length;
-            log(`Forwarding ${recordCount} record${recordCount !== 1 ? "s" : ""} with library info: ${JSON.stringify(libraryInfo)}`);
-            log(`Last Used Filter: ${JSON.stringify(response.filter)}`);
-            const record = dynformsResponse.data.records[0];
-            response.recordInfo = {
-                recordId: record?._id,
-                availableTags: libraryInfo.library?.tags?.filter((tag) => !record?.tags?.includes(tag)),
-            };
-
-            response.latestOps.collectionsLastAddedTo = [...cache.collectionsLastAddedTo];        
-            cache.lastPulledRecord = {...record};
-        } else {
-            log(`Returning error: ${dynformsResponse.error}`);
-        }
+        cache.lastUsedFilter = response.filter ? { ...filter } : {};
+        log(`Last Used Filter: ${JSON.stringify(cache.lastUsedFilter)}`);
 
         res.json(response);
     });
 
     dbRouter.post("/m2m/push", async (req, res) => {
+        const { record } = req.body;
         try {
-            const dynformsResponse = await processDynformsPushRequest({ ...req.body });
-            const libraryInfo = await photos.getLibraryInfo();
-            libraryInfo.filterSize = await photos.getFilterSize(req.body.filter);
-
-            let response = {
-                libraryInfo,
-                latestOps: {},
-                ...dynformsResponse
-            };
-
-            if (dynformsResponse?.data?.records) {
-                const recordCount = dynformsResponse.data.records.length;
-                log(`Forwarding ${recordCount} dynforms record${recordCount !== 1 ? "s" : ""}`);
-                log(`Last Used Filter: ${JSON.stringify(response.filter)}`);                
-                const record = dynformsResponse.data.records[0];                
-                
+            await photos.updateFileInfoRecord(record);
+            let response = {};
+            if (true) {                
                 updateCollectionsLastAddedTo(record);
                 const prevRecord = _.cloneDeep(cache.lastPulledRecord);
                 cache.lastPulledRecord = { ...record };
 
-                response.latestOps.collectionsLastAddedTo = [...cache.collectionsLastAddedTo];
-                
-                response.recordInfo = {
-                    recordId: record._id,
-                    availableTags: libraryInfo.library?.tags?.filter(tag => !record?.tags?.includes(tag))
-                }                
+                await photos.syncAllMetaItemsWithFileInfoRecord(record, prevRecord);
 
-                await photos.syncCollectionsForFileInfoRecord(record, prevRecord);
+                const libraryInfo = await photos.getLibraryInfo();
+                libraryInfo.filterSize = await photos.getFilterSize(req.body.filter);
+
+                response = {
+                    libraryInfo,
+                    latestOps: {
+                        collectionsLastAddedTo: [...cache.collectionsLastAddedTo],
+                        lastUsedFilter: cache.lastUsedFilter
+                    },
+                    data: {
+                        records: [record]
+                    },
+                    recordInfo: {
+                        recordId: record._id,
+                        availableTags: libraryInfo.library?.tags?.filter((tag) => !record?.tags?.includes(tag)),
+                    }
+                };                                
+                cache.lastUsedFilter = response.filter ? { ...response.filter } : {};
+                log(`Last Used Filter: ${JSON.stringify(cache.lastUsedFilter)}`);    
 
             } else {
                 log(`Returning error. ${dynformsResponse?.error ? dynformsResponse.error : `(Unknown error; DynForms response didn't come back as expected.)`}`);

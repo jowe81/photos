@@ -172,7 +172,7 @@ async function Photos(dbObject, collectionName) {
                 }
 
                 fileInfo.rating = 0;
-                fileInfo.collections = ['unsorted'];
+                fileInfo.collections = [];
 
                 // Add the main fileInfo record.
                 const insertResult = await addFileToDb(
@@ -183,8 +183,8 @@ async function Photos(dbObject, collectionName) {
                     ops.fileInfo = "insert";
                 }
 
-                // Process collections and tags
-                await syncCollectionsForFileInfoRecord(fileInfo);
+                // Process collections, tags, folders
+                await syncAllMetaItemsWithFileInfoRecord(fileInfo);
 
                 resolve(fileInfo);
             });
@@ -194,69 +194,230 @@ async function Photos(dbObject, collectionName) {
         return { ops, fileInfo, faceData };
     }
 
-    async function syncCollectionsForFileInfoRecord(newRecord, prevRecord) {
-        const collectionsNew = newRecord.collections ? [...newRecord.collections] : [];
-        const collectionsNewStringified = JSON.stringify(collectionsNew); // Bizarre: using an plain array here results in the array being mutated in the loop below.
+    async function syncMetaItemsWithFileInfoRecord(newRecord, prevRecord, metaTypeFieldName, metaTypeLabel) {
+        const itemsNew = newRecord[metaTypeFieldName] ? [...newRecord[metaTypeFieldName]] : [];        
+        const itemsNewStringified = JSON.stringify(itemsNew); // Bizarre: using an plain array here results in the array being mutated in the loop below.
 
         // Need to merge the collections from both before and after in order to both add and remove as needed.
-        const collectionsToProcess = collectionsNew;
-        const collectionsPrev = prevRecord?.collections ? [...prevRecord.collections] : [];
-        collectionsPrev.forEach(collectionName => !collectionsToProcess.includes(collectionName) && collectionsToProcess.push(collectionName));
+        const itemsToProcess = itemsNew;
+        const itemsPrev = prevRecord && prevRecord[metaTypeFieldName] ? [...prevRecord[metaTypeFieldName]] : [];
+        itemsPrev.forEach(
+            (itemName) =>
+                !itemsToProcess.includes(itemName) && itemsToProcess.push(itemName)
+        );
 
-        const promises = collectionsToProcess.map(async (collectionName) => {
-            // Should the pic be in the collection?
-            const pictureShouldBeInCollection = JSON.parse(collectionsNewStringified).includes(collectionName);
+        const promises = itemsToProcess.map(async (itemName) => {
+            const pictureShouldBeInMetaItem = JSON.parse(itemsNewStringified).includes(itemName);
 
             /**
-             * See if this collection exists.
-             * If not, create the collection.
+             * See if this metaTypeItem exists.
+             * If not, create the metaTypeItem.
              *
              * See if the picture should be in it, then add/remove this picture.
              */
 
-            const collectionRecord = await metaCollection.findOne({ name: collectionName });
-            let collectionId = collectionRecord?._id;
+            const metaTypeRecord = await metaCollection.findOne({ name: itemName });
+            let metaTypeItemId = metaTypeRecord?._id;
 
-            if (!collectionId) {
-                // Create collection record.
+            if (!metaTypeItemId) {
+                // Create metaTypeItem record.
                 const result = await metaCollection.insertOne({
-                    type: "collection",
-                    name: collectionName,
+                    type: metaTypeLabel,
+                    name: itemName,
                 });
 
-                collectionId = result.insertedId;
+                metaTypeItemId = result.insertedId;
             }
 
-            if (!collectionId) {
+            if (!metaTypeItemId) {
                 log(`Something went wrong.`, null, "bgRed");
             }
-            // Now check if the picture is in the collection already
-            let collectionItem = await metaItemsCollection.findOne({ collectionId, fileInfoId: newRecord._id });
-            const pictureIsCurrentlyInCollection = !!collectionItem;
+            // Now check if the picture is in the metaType already
+            let metaTypeItem = await metaItemsCollection.findOne({ metaTypeItemId, fileInfoId: new ObjectId(newRecord._id) });
+            const pictureIsCurrentlyInMetaType = !!metaTypeItem;
 
-            if (pictureShouldBeInCollection) {
-                if (!pictureIsCurrentlyInCollection) {
-                    log(`Added collection '${collectionName}': Picture is not yet in collection, adding it.`, null, "yellow");
+            if (pictureShouldBeInMetaItem) {
+                if (!pictureIsCurrentlyInMetaType) {
+                    log(
+                        `Added ${metaTypeLabel} '${itemName}': Picture is not yet in ${metaTypeLabel}, adding it.`,
+                        null,
+                        "yellow"
+                    );
 
                     const result = await metaItemsCollection.insertOne({
-                        fileInfoId: newRecord._id,
-                        collectionId,
-                        collectionName, // Don't need to store this, just to make dev easier
+                        fileInfoId: new ObjectId(newRecord._id),
+                        metaTypeItemId,
+                        metaItemName: itemName, // Don't need to store this, just to make dev easier
+                        metaTypeLabel, // Don't need to store this, just to make dev easier
                     });
                 } else {
-                    log(`Added collection '${collectionName}': Picture is already in collection.`, null, "green");
+                    log(`Added ${metaTypeLabel} '${itemName}': Picture is already in ${metaTypeLabel}.`, null, "green");
                 }
             } else {
-                if (pictureIsCurrentlyInCollection) {
-                    const result = await metaItemsCollection.deleteOne({_id: collectionItem._id});
-                    log(`Removed collection '${collectionName}': Picture is currently in collection, removing it.`, null, "yellow");
+                if (pictureIsCurrentlyInMetaType) {
+                    const result = await metaItemsCollection.deleteOne({ _id: metaTypeItem._id });
+                    log(
+                        `Removed ${metaTypeLabel} '${itemName}': Picture is currently in ${metaTypeLabel}, removing it.`,
+                        null,
+                        "yellow"
+                    );
                 } else {
-                    log(`Removed collection '${collectionName}': Picture is not in collection.`, null, "green");
-                }                
+                    log(`Removed ${metaTypeLabel} '${itemName}': Picture is not in ${metaTypeLabel}.`, null, "green");
+                }
             }
         });
 
-        const data = await Promise.all(promises);
+        return await Promise.all(promises);
+    }
+
+    async function syncFoldersWithFileInfoRecord(record) {
+        /**
+         * Get folder item from photoDbMeta, create if needed
+         * Add photoDbMetaItems record
+         */
+        if (!record) {
+            log(`Missing parameter at syncFoldersWithFileInfoRecord`, null, 'bgRed');
+            return null;
+        }
+
+        let metaRecord = await metaCollection.findOne({name: record.dirname});
+
+        if (!metaRecord) {
+            const result = await metaCollection.insertOne({
+                type: 'folder',
+                name: record.dirname,
+            })
+
+            metaRecord = await metaCollection.findOne({_id: result.insertedId});            
+        }
+        
+        let metaItemsRecord = await metaItemsCollection.findOne({
+            fileInfoId: record._id,
+            metaTypeItemId: metaRecord._id,
+        });
+
+        if (!metaItemsRecord) {
+            const result = await metaItemsCollection.insertOne({
+                fileInfoId: record._id,
+                metaTypeItemId: metaRecord._id,
+                metaItemName: record.dirname,
+                metaTypeLabel: "folder",
+            });
+        }
+    }
+
+    async function syncAllMetaItemsWithFileInfoRecord(record, prevRecord) {
+        const promises = [
+            syncMetaItemsWithFileInfoRecord(record, prevRecord, "collections", "collection"),
+            syncMetaItemsWithFileInfoRecord(record, prevRecord, 'tags', 'tag'),
+            syncFoldersWithFileInfoRecord(record),
+        ];
+
+        await Promise.all(promises);
+    }
+
+    async function getMetaItemTypeItemCounts(metaTypeFieldName, metaTypeLabel) {
+        const metaItems = await metaCollection.find({type: metaTypeLabel}).toArray();
+        const counts = [];
+        const promises = metaItems.map(async (metaItemRecord) => {
+            let count = await metaItemsCollection.countDocuments({ metaTypeItemId: metaItemRecord._id });            
+            counts.push({
+                item: metaItemRecord.name,
+                count,
+            })
+        })
+
+        await Promise.all(promises);
+        return counts;
+    }
+
+    async function getFilterRecord(filter) {
+        let record = await metaCollection.findOne({type: 'filter', value: JSON.stringify(filter)});
+
+        if (!record) {
+            const result = await metaCollection.insertOne({ 
+                type: "filter", 
+                value: JSON.stringify(filter),
+                cursorIndex: 0,
+            });            
+
+            record = await metaCollection.findOne({_id: result.insertedId});
+        }
+        
+        return record;
+    }
+
+    async function updateFileInfoRecord(record) {
+        if (record?.collections) {
+            // Sanity
+            if (record.collections.includes("trashed")) {
+                record.collections = ["trashed"];
+            }
+
+            // It's being updated but not deleted; make sure it's in general.
+            if (record.collections[0] !== "trashed") {
+                if (!record.collections.includes("general")) {
+                    record.collections.push("general");
+                }
+            }
+        } else {
+            record.collections = [];
+        }
+
+        const result = await fileInfoCollection.updateOne({_id: new ObjectId(record._id)}, record);
+    }
+
+    async function updateFilterRecord(filterRecord) {
+        if (!filterRecord && filterRecord._id) {
+            return null;
+        }
+
+        let result = await metaCollection.updateOne({_id: filterRecord._id}, filterRecord);        
+    }
+
+    async function getRequestedFileInfoRecord(filter, orderBy, offsetFromCurrent) {
+        log(`Looking for next: ${JSON.stringify(filter)}, order: ${JSON.stringify(orderBy)}`, null, 'bgBlue');
+
+        const filterRecord = await getFilterRecord(filter);
+                
+
+        // Execute the filter, get the records
+        const filteredCount = await fileInfoCollection.countDocuments(filter);
+
+        let newCursorIndex = filterRecord.cursorIndex + offsetFromCurrent;
+
+        // This does not yet support flipping multiple times (skip larger numbers of images)
+        if (newCursorIndex < 0) {
+            // Flip backwards
+            newCursorIndex = filteredCount + newCursorIndex;
+        } else if (newCursorIndex >= filteredCount) {
+            // Flip forwards            
+            newCursorIndex = newCursorIndex - filteredCount;
+        }
+
+        // There are still cases where this happens.
+        if (newCursorIndex > filteredCount - 1 || newCursorIndex < 0) {
+            newCursorIndex = 0;
+        }
+        log(`filteredCount: ${filteredCount}, current cursorIndex: ${filterRecord.cursorIndex}, offset: ${offsetFromCurrent}, new cursorIndex: ${newCursorIndex}`);
+
+        let fileInfoRecord;
+        const fileInfoRecordArray = await fileInfoCollection.find(filter).sort(orderBy).skip(newCursorIndex).toArray();
+        if (fileInfoRecordArray?.length) {
+            fileInfoRecord = fileInfoRecordArray[0];
+        }
+        
+        await updateFilterRecord({
+            ...filterRecord,
+            cursorIndex: newCursorIndex,
+        });
+
+        if (fileInfoRecord?._id) {
+            fileInfoRecord.url = `${process.env.APP_URL}/db/photo?_id=${fileInfoRecord._id}`;
+            log(`Found: ${fileInfoRecord._id}, ${fileInfoRecord.url}`);
+        }
+
+        return fileInfoRecord;
     }
 
     // Asynchronous function to process all files sequentially
@@ -868,36 +1029,42 @@ async function Photos(dbObject, collectionName) {
     async function getLibraryInfo() {
         const startTime = performance.now();
         const libraryInfo = {};
-
-        libraryInfo.collections = await getCollectionCounts();
-        addDefaultCollectionsInfoToLibraryInfo(libraryInfo);
-
+        
+        //const newCounts = await getMetaItemTypeItemCounts("collections", "collection");
+        libraryInfo.collections = await getMetaItemTypeItemCounts("collections", "collection");
+        await addDefaultCollectionsInfoToLibraryInfo(libraryInfo);
+        
         libraryInfo.photosCount = await getTotalDocumentCount();
-        libraryInfo.folders = await getArrayItemsWithCounts('dirname')
+        libraryInfo.folders = await getMetaItemTypeItemCounts("dirname", "folder");
 
         addLabelsToFoldersInfo(libraryInfo.folders);
         libraryInfo.folders.sort((a, b) => a.label > b.label ? -1 : 1);
 
-        libraryInfo.tags = await getArrayItemsWithCounts('tags');
+        libraryInfo.tags = await getMetaItemTypeItemCounts("tags", "tag");
 
 
         const endTime = performance.now();
-        libraryInfo.calculcationTime = endTime - startTime;
+        libraryInfo.calculationTime = endTime - startTime;
                 
         return libraryInfo;
     }
 
-    function addDefaultCollectionsInfoToLibraryInfo(libraryInfo) {
-        const defaultCollectionNames = ["favorites", "trashed", "unsorted"];
+    async function addDefaultCollectionsInfoToLibraryInfo(libraryInfo) {
+        const defaultCollectionNames = ["trashed", "unsorted"];
 
-        defaultCollectionNames.forEach((collectionName) => {
-            const existingInfo = libraryInfo.collections.filter(
-                (collectionInfo) => collectionInfo.item === collectionName
-            );
-            if (!existingInfo.length) {
-                libraryInfo.collections.push({ item: collectionName, count: 0 });
-            }
-        });
+        // Trashed
+        let existingInfo = libraryInfo.collections.filter(
+            (collectionInfo) => collectionInfo.item === "trashed"
+        );
+        if (!existingInfo.length) {
+            libraryInfo.collections.push({ item: collectionName, count: 0 });
+        }
+
+        // Unsorted
+        libraryInfo.collections.push({
+            item: "unsorted",
+            count: await fileInfoCollection.countDocuments({ collections: { $eq: [] } }),
+        })
     }
 
     function addLabelsToFoldersInfo(foldersInfo) {
@@ -1015,7 +1182,6 @@ async function Photos(dbObject, collectionName) {
         }
     }
 
-
     async function getCollectionCounts() {
         try {
             const collectionNames = await getCollectionNames();
@@ -1069,13 +1235,34 @@ async function Photos(dbObject, collectionName) {
         }
     }
 
+    async function getArrayItems(fieldName) {
+        try {
+            const itemsInfo = await fileInfoCollection
+                .aggregate([
+                    { $unwind: `$${fieldName}` },
+                    { $group: { _id: `$${fieldName}` } },
+                    { $project: { [fieldName]: 0 } },
+                ])
+                .toArray();
+
+            return itemsInfo.map((info) => info._id);
+        } catch (err) {
+            log(`Could not retrieve tag ${fieldName}s: ${err.message}`, null, "red");
+            return [];
+        }
+    }    
+
     return {
         addDirectoryToDb,
         getRandomPicture,
+        getArrayItems,
+        getCollectionNames,
         getCount,
         getDataForFileWithIndex,
-        getFaceDataRecord,        
+        getFaceDataRecord,    
+        getRequestedFileInfoRecord,   
         updateFaceDataRecord,
+        updateFileInfoRecord,
         getFilterSize,
         getPersonRecords,
         getRecords,
@@ -1084,9 +1271,10 @@ async function Photos(dbObject, collectionName) {
         storeReferenceFaceData,
         recognizeFacesInFile,
         processFaces,
-        syncCollectionsForFileInfoRecord,
+        syncMetaItemsWithFileInfoRecord,
+        syncAllMetaItemsWithFileInfoRecord,
         purgeMissingFiles,
-
+        getFilterRecord,
         getLibraryInfo,
     };
 }

@@ -17,14 +17,14 @@ clientContainer.mongoConnect = (dbName) => {
     const client = new MongoClient(db_url);
     clientContainer.mongoClient = client;
 
-    log(`Connecting to Mongo service at ${db_url}.`);
+    log(`Connecting to Mongo service at ${db_url}, using database.`);
 
     return new Promise((resolve, reject) => {
         client
             .connect()
             .then((d) => {
                 db = client.db(db_mongo_database);
-                resolve({ db_mongo_database, db });
+                resolve({ db_mongo_database, db, client });
             })
             .catch((err) => {
                 log("Connection failed. ", null, err);

@@ -24,7 +24,7 @@ const server = http.createServer(app);
 const appName = process.env.APP_NAME ?? "JJ Project Backend";
 const port = process.env.PORT ?? 3020;
 
-log(`Welcome to ${appName}. Backend is starting up...`);
+log(`Welcome to ${appName}. App url is ${process.env.APP_URL}. Backend is starting up...`);
 
 mongoConnect().then(async ({db_mongo_database, db}) => {
   log(`Connected to database ${db_mongo_database}`);
