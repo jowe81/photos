@@ -1,7 +1,7 @@
 import _ from "lodash";
 import constants from "../../constants.js";
-import chalk from "chalk";
 import fs from "fs";
+import crypto from "crypto";
 import ExifParser from "exif-parser";
 import ExifReader from "exifreader";
 import { performance } from 'perf_hooks';
@@ -14,6 +14,7 @@ import { getFaceFunctions } from "./faceRecognition.mjs";
 
 import { log } from "./../Log.js";
 import axios from "axios";
+
 
 async function Photos(dbObject, collectionName) {
     const db = dbObject;
@@ -292,13 +293,13 @@ async function Photos(dbObject, collectionName) {
         }
         
         let metaItemsRecord = await metaItemsCollection.findOne({
-            fileInfoId: record._id,
+            fileInfoId: new ObjectId(record._id),
             metaTypeItemId: metaRecord._id,
         });
 
         if (!metaItemsRecord) {
             const result = await metaItemsCollection.insertOne({
-                fileInfoId: record._id,
+                fileInfoId: new ObjectId(record._id),
                 metaTypeItemId: metaRecord._id,
                 metaItemName: record.dirname,
                 metaTypeLabel: "folder",
@@ -328,7 +329,7 @@ async function Photos(dbObject, collectionName) {
         })
 
         await Promise.all(promises);
-        return counts;
+        return counts.sort((a, b) => a.item > b.item ? 1 : -1);
     }
 
     async function getFilterRecord(filter) {
@@ -345,6 +346,56 @@ async function Photos(dbObject, collectionName) {
         }
         
         return record;
+    }
+
+    function processFilterForUnsortedCollection(filter) {
+        // If the 'unsorted' is in the filter object, we have to adjust internally, making sure we also search for the empty collections array.
+        const filterItemToAdjust = filter?.$and?.find(filterItem => filterItem.collections && filterItem.collections.$in?.includes('unsorted'));
+
+        if (filterItemToAdjust) {
+            const adjustedFilterItem = { $or: [{collections: filterItemToAdjust.collections}, {collections: {$eq: []}}]}
+            delete filterItemToAdjust.collections;
+            filterItemToAdjust.$or = adjustedFilterItem.$or;
+        }
+    }
+
+    async function processActionRequest(record, settings, lastUsedFilter) {
+
+        switch (settings?.action) {
+            case "applyToAllPicturesInSelectedFolders":
+                const dirnameFilter = lastUsedFilter?.$and?.find((filterItem) => filterItem.dirname);            
+                await applyItemsSelectionToMany(record, settings, dirnameFilter);
+                break;
+        }
+    }
+
+    async function applyItemsSelectionToMany(record, settings, filter) {
+        const itemType = settings?.itemType;
+        if (!itemType) {
+            log(`Cannot apply items selection to many: no item type present.`, null, 'bgRed');
+        } else if (!filter) {
+            log(`Cannot apply items selection to many ${itemType}: no filter present.`, null, 'bgRed');
+        } else if (!record) {
+            log(`Cannot apply items selection to many ${itemType}: no reference record found.`, null, 'bgRed');
+        } else {
+            log(`Applying ${itemType} ${record[itemType]?.join(', ')} to records in filter ${JSON.stringify(filter)}`);
+            const docs = await fileInfoCollection.find(filter).toArray();
+            const promises = docs?.map(async doc => {
+                const prevRecord = _.cloneDeep(doc);
+                doc[itemType] = record[itemType];
+                await updateFileInfoRecord(doc);
+                await syncAllMetaItemsWithFileInfoRecord(doc, prevRecord);
+                log(`Updated ${doc._id}`, null, 'yellow');
+            })
+
+            if (!promises) {
+                log(`No pictures appeared to match the filter.`, null, 'yellow');
+                return;
+            }
+            
+            await Promise.all(promises);
+            log(`Adjusted ${promises.length} pictures.`, null, "yellow");
+        }
     }
 
     async function updateFileInfoRecord(record) {
@@ -379,12 +430,17 @@ async function Photos(dbObject, collectionName) {
         log(`Looking for next: ${JSON.stringify(filter)}, order: ${JSON.stringify(orderBy)}`, null, 'bgBlue');
 
         const filterRecord = await getFilterRecord(filter);
-                
+        if (!filterRecord) {
+            log(`Filter record not found for ${JSON.stringify(filter)}. Resetting cursor.`, 'bgRed');            
+        }                
 
+        if (!offsetFromCurrent) {
+            offsetFromCurrent = 0;
+        }
         // Execute the filter, get the records
         const filteredCount = await fileInfoCollection.countDocuments(filter);
 
-        let newCursorIndex = filterRecord.cursorIndex + offsetFromCurrent;
+        let newCursorIndex = filterRecord ? filterRecord.cursorIndex + offsetFromCurrent : 0;
 
         // This does not yet support flipping multiple times (skip larger numbers of images)
         if (newCursorIndex < 0) {
@@ -396,7 +452,7 @@ async function Photos(dbObject, collectionName) {
         }
 
         // There are still cases where this happens.
-        if (newCursorIndex > filteredCount - 1 || newCursorIndex < 0) {
+        if (isNaN(newCursorIndex) || newCursorIndex > filteredCount - 1 || newCursorIndex < 0) {
             newCursorIndex = 0;
         }
         log(`filteredCount: ${filteredCount}, current cursorIndex: ${filterRecord.cursorIndex}, offset: ${offsetFromCurrent}, new cursorIndex: ${newCursorIndex}`);
@@ -417,7 +473,10 @@ async function Photos(dbObject, collectionName) {
             log(`Found: ${fileInfoRecord._id}, ${fileInfoRecord.url}`);
         }
 
-        return fileInfoRecord;
+        return { 
+            fileInfoRecord,
+            cursorIndex: newCursorIndex,
+        };
     }
 
     // Asynchronous function to process all files sequentially
@@ -463,12 +522,38 @@ async function Photos(dbObject, collectionName) {
                 gid,
                 tags,
                 date,
-
+                fingerPrint: getFingerPrint(file),
             },
         };
 
         log(`Got basic meta for ${file}`);
         return fileInfo;
+    }
+
+    async function getFingerPrint(file) {
+        return await calculateMD5(file);
+    }
+
+    function calculateMD5(filePath) {
+        return new Promise((resolve, reject) => {
+            // Create a hash object
+            const hash = crypto.createHash("md5");
+            const stream = fs.createReadStream(filePath);
+
+            stream.on("data", function (data) {
+                hash.update(data, "utf8");
+            });
+
+            stream.on("end", function () {
+                // Calculate digest
+                const md5 = hash.digest("hex");
+                resolve(md5);
+            });
+
+            stream.on("error", function (err) {
+                reject(err);
+            });
+        });
     }
 
     function getTagsAndDateFromFilePath(file) {
@@ -1030,7 +1115,6 @@ async function Photos(dbObject, collectionName) {
         const startTime = performance.now();
         const libraryInfo = {};
         
-        //const newCounts = await getMetaItemTypeItemCounts("collections", "collection");
         libraryInfo.collections = await getMetaItemTypeItemCounts("collections", "collection");
         await addDefaultCollectionsInfoToLibraryInfo(libraryInfo);
         
@@ -1085,6 +1169,7 @@ async function Photos(dbObject, collectionName) {
             })
             
             folderInfo.label = mainName ?? baseDisplay;
+            folderInfo.long = baseDisplay;
         })
     }
 
@@ -1260,6 +1345,7 @@ async function Photos(dbObject, collectionName) {
         getCount,
         getDataForFileWithIndex,
         getFaceDataRecord,    
+        getFingerPrint,
         getRequestedFileInfoRecord,   
         updateFaceDataRecord,
         updateFileInfoRecord,
@@ -1270,7 +1356,9 @@ async function Photos(dbObject, collectionName) {
         getRecordWithIndex,
         storeReferenceFaceData,
         recognizeFacesInFile,
+        processActionRequest,
         processFaces,
+        processFilterForUnsortedCollection,
         syncMetaItemsWithFileInfoRecord,
         syncAllMetaItemsWithFileInfoRecord,
         purgeMissingFiles,
