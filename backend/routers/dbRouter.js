@@ -135,6 +135,23 @@ const initRouter = (express, db, photos) => {
         }
     });
 
+    // Serve a file by path/filename
+    dbRouter.get("/imageFile", async(req, res) => {
+        const { path } = req.query;
+
+        // This should be done differently
+        const defaultPath = "/raid/32T/johannes_library/NotesForJess/";
+        const fullPath = `${defaultPath}${path}`;
+
+        log (`Looking for file: ${fullPath}`, 'yellow');
+
+        if (!fs.existsSync(fullPath)) {
+            return res.status(404).json({ success: false, error: "Image not found." });
+        }
+        
+        res.sendFile(fullPath)
+    })
+
     // Serve an actual file
     dbRouter.get("/photo", async (req, res) => {
         const { _id } = req.query;
