@@ -222,7 +222,11 @@ const initRouter = (express, db, photos) => {
         );
 
         const libraryInfo = await photos.getLibraryInfo();
+        photos.processFilterForPlaceholders(filter);
         photos.processFilterForUnsortedCollection(filter);
+        photos.processFilterForFolderSearch(filter);
+        console.log('Filter Resolved',filter.$and)
+
         libraryInfo.filterSize = await photos.getFilterSize(filter);
         const { fileInfoRecord, cursorIndex } = await photos.getRequestedFileInfoRecord(filter, orderBy, settings?.cursorIndexOffset);
 
