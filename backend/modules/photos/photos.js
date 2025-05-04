@@ -60,7 +60,7 @@ async function Photos(dbObject, collectionName) {
         let ctrlField;
 
         try {
-            const data = await axios.get(`http://johannes-mb.wnet.wn:3010/db/_ctrlField`);
+            const data = await axios.get(`http://server.wnet.wn:3010/db/_ctrlField`);
             ctrlField = data.data?.__ctrl;
 
             log(`New control field: ${JSON.stringify(ctrlField)}`);
